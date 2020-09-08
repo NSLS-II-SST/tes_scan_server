@@ -1,0 +1,6 @@
+__pycache__
+*egg*
+*.bak
+*.npy
+last_fbastats
+testdata
