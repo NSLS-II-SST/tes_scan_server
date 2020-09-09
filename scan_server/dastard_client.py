@@ -60,7 +60,6 @@ class DastardClient():
         reponse = requests.post(self.url, json=msg).json()
         assert response["id"] == msg["id"]
         assert response["error"] is None
-        print(f"{response=}")
         return response
 
     def start_file(self):
