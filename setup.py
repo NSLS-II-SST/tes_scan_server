@@ -10,7 +10,7 @@ setup(
     python_requires='>=3.5',
     description="ScanServer helps automate synchrotron beamlines with a TES",
     install_requires=["python-statemachine", "pytest", "requests", "numpy", "werkzeug", "jsonrpc",
-    "mass @ git+ssh://git@bitbucket.org/joe_fowler/mass.git@develop#egg=mass"],
+    "mass @ git+ssh://git@bitbucket.org/joe_fowler/mass.git@develop#egg=mass", "zmq"],
     license="MIT license",
     include_package_data=True,
     keywords=['ssrl10-1', "tes", "scan", "beamline"],
