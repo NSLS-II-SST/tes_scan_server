@@ -1,7 +1,7 @@
-import requests
 import json
 import itertools
 import zmq
+from tinyrpc.protocols.jsonrpc import JSONRPCProtocol
 
 
 class DastardListener():
@@ -48,16 +48,12 @@ class DastardClient():
         self.listener = listener
         self.pulse_trigger_params = pulse_trigger_params
         self.noise_trigger_params = noise_trigger_params
-        self._id_iter = itertools.count()
+        self.rpc = JSONRPCProtocol()
 
-    def _message(self, method, params):
-        return {"id": next(self._id_iter),
-                "params": [params],
-                "method": method}
-
-    def _call(self, method, params):
-        msg = self._message(method, params)
-        reponse = requests.post(self.url, json=msg).json()
+    def _call(self, method: str, params):
+        request = self.rpc(method, params)
+        request.serialize()
+        # reponse = requests.post(self.url, json=msg).json()
         assert response["id"] == msg["id"]
         assert response["error"] is None
         return response

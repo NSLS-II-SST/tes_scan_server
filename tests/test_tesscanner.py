@@ -26,7 +26,7 @@ def test_tes_scanner():
     listener.set_next(topic="WRITING", contents ={"Active":True, "FilenamePattern": "test_pattern"})
     scanner.file_start()
     assert client._last_method == "SourceControl.WriteControl"
-    scanner.calibration_data_start(sample_id = 0, sample_name = "test_sample", routine = "ssrl_10_1_cal_0")
+    scanner.calibration_data_start(sample_id = 0, sample_name = "test_sample", routine = "ssrl_10_1_mix_cal")
     scanner.calibration_data_end()
     scanner.calibration_learn_from_last_data()
     scanner.scan_define(var_names=["mono_eV", "temp_K"], scan_num=0, beamtime_id="test_scan", 
@@ -47,7 +47,7 @@ def test_tes_scanner():
     scanner.roi_set([(100,150),(500,550), (600,650)])
     scanner.roi_start_counts()
     scanner.roi_get_counts()
-    scanner.calibration_data_start(sample_id = 0, sample_name = "test_sample", routine = "ssrl_10_1_cal_0")
+    scanner.calibration_data_start(sample_id = 0, sample_name = "test_sample", routine = "ssrl_10_1_mix_cal")
     scanner.calibration_data_end()
     scanner.scan_start_calc_last_outputs(drift_correct_strategy="before_after_interp")
     scanner.file_end()
