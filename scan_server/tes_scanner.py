@@ -1,5 +1,4 @@
 from statemachine import StateMachine, State
-import mass
 from typing import List
 import numpy as np
 import time
