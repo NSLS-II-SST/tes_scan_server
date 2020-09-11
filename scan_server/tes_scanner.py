@@ -3,6 +3,7 @@ from typing import List
 import numpy as np
 import time
 from . import routines
+import mass
 
 class Scan():
     def __init__(self, var_names: List[str], scan_num: int, beamtime_id: str, 
@@ -102,7 +103,7 @@ class TESScanner():
         # now we can access realtime_energy
 
     def _calibration_apply_routine(self, routine, cal_number, data):
-        print(f"{routine=} {cal_number=}")
+        # print(f"{routine=} {cal_number=}")
         routine = routines.get(routine)
         return routine(cal_number, data)
 
