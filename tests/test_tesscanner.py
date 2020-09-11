@@ -8,6 +8,10 @@ class MockClient(DastardClient):
         self._last_params = params
         return None
 
+    def _connect(self):
+        return  # dont try to connect the socket
+
+
 class MockListener():
     def set_next(self, topic, contents):
         self.topic = topic
@@ -21,7 +25,7 @@ class MockListener():
 
 def test_tes_scanner():
     listener = MockListener()
-    client = MockClient("test_url", listener, pulse_trigger_params = None, noise_trigger_params = None)
+    client = MockClient(("test_url", "test_port"), listener, pulse_trigger_params = None, noise_trigger_params = None)
     scanner = TESScanner(dastard = client, beamtime_id ="test")
     listener.set_next(topic="WRITING", contents ={"Active":True, "FilenamePattern": "test_pattern"})
     scanner.file_start()

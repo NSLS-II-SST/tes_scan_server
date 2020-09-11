@@ -1,3 +1,7 @@
+# here we implment something like json rpc
+# but to keep the requirements on the "client" lower
+# our responses are simpler than json text, and we don't require the "jsonrpc"="2.0" key
+
 import time
 import os
 import socket

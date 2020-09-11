@@ -1,6 +1,7 @@
 import json
 import itertools
 import zmq
+import socket
 
 
 class DastardListener():
@@ -42,20 +43,32 @@ class DastardListener():
 
 
 class DastardClient():
-    def __init__(self, url, listener, pulse_trigger_params, noise_trigger_params):
-        self.url = url
+    def __init__(self, addr_port, listener, pulse_trigger_params, noise_trigger_params):
+        self.addr_port = addr_port
         self.listener = listener
         self.pulse_trigger_params = pulse_trigger_params
         self.noise_trigger_params = noise_trigger_params
-        self.rpc = JSONRPCProtocol()
+        self._connect()
 
-    def _call(self, method: str, params):
-        request = self.rpc(method, params)
-        request.serialize()
-        # reponse = requests.post(self.url, json=msg).json()
+    def _connect(self):
+        self._socket = socket.create_connection(self.addr_port)
+
+    def _message(self, method_name, params):
+        if not isinstance(params, list):
+            params = [params]
+        d = {"id": next(self._id_iter),
+        "params": params,
+        "method": method_name} 
+        return d
+
+    def _call(self, method_name: str, params):
+        msg = self._message(method_name, params)
+        self._socket.sendall(json.dumps(msg))
+        response = self._socket.recv(4096)
+        response = json.loads(response.decode())
         assert response["id"] == msg["id"]
-        assert response["error"] is None
-        return response
+        assert "error" not in response.keys()
+        return response["result"]
 
     def start_file(self):
         params = {"Request": "Start",
@@ -78,3 +91,5 @@ class DastardClient():
 
     def set_pulse_triggers(self):
         self._call("", self.pulse_trigger_params)
+
+
