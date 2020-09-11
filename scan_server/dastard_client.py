@@ -1,7 +1,6 @@
 import json
 import itertools
 import zmq
-from tinyrpc.protocols.jsonrpc import JSONRPCProtocol
 
 
 class DastardListener():
