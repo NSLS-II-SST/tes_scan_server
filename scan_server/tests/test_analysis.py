@@ -91,6 +91,7 @@ class ScanResult():
         return ScanResult(self.hist2d+other.hist2d, self.var_name, self.var_unit, self.var_vals,
         self.bin_centers, self.attr, self.attr_unit, "sum scan")
 
+
 def scan_2d_hist(scan, data, bin_edges, attr):
     starts_nano = (1e9*np.array(scan.epoch_time_start_s)).astype(int)
     ends_nano = (1e9*np.array(scan.epoch_time_end_s)).astype(int)
@@ -109,5 +110,7 @@ def scan_2d_hist(scan, data, bin_edges, attr):
     return ScanResult(hist2d, var_name, var_unit, var_vals, bin_centers, attr, "eV", scan.description_str())
 results = [scan_2d_hist(scan, data, np.arange(0, 1000, 1), "energy") for scan in util.scans()]
 
-result[0].plot()
-sum(results).plot()
+results[0].plot()
+results[1].plot()
+mega_result = results[0] + results[1] + results[2] + results[3] + results[4] + results[5] 
+mega_result.plot()
