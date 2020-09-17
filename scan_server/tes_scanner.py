@@ -9,52 +9,37 @@ import io
 
 
 @dataclass
-class ValidatedValue():
-    "wrap a value in this to indicate it has been validated"
-    val: Any
-
-
-@dataclass
 class Scan():
-    var_names: List[str]
+    var_name: str
+    var_unit: str
     scan_num: int
     beamtime_id: str
     ext_id: str
     sample_id: int
     sample_desc: str
+    extra: dict
+    point_extras: list = field(default_factory=list)
     var_values: list = field(default_factory=list)
-    experiment_state_labels: List[str] = field(default_factory=list)
     epoch_time_start_s: List[int] = field(default_factory=list)
-    epoch_time_stop_s: List[int] = field(default_factory=list)
+    epoch_time_end_s: List[int] = field(default_factory=list)
     _ended: bool = False
 
-    def validate_point(self, vars_dict):
-        assert len(vars_dict) == len(self.var_names)
-        for key in vars_dict.keys():
-            assert key in self.var_names, f"var names must match {self.var_names}, you sent {key}"
-        validated_values = np.array([vars_dict[name] for name in self.var_names])
-        return ValidatedValue(validated_values)
-
-    def point_start(self, validated_values, epoch_time_s):
+    def point_start(self, scan_var, epoch_time_s, extra):
         assert not self._ended
-        assert isinstance(validated_values, ValidatedValue)
-        assert len(self.epoch_time_start_s) == len(self.epoch_time_stop_s)
-        vals = validated_values.val
-        point_num = len(self.var_values)
-        self.var_values.append(vals)
-        experiment_state_label = f"SCAN{self.scan_num}_{point_num}"
-        self.experiment_state_labels.append(experiment_state_label)
+        assert len(self.epoch_time_start_s) == len(self.epoch_time_end_s)
+        self.var_values.append(scan_var)
+        self.point_extras.append(extra)
         self.epoch_time_start_s.append(epoch_time_s)
-        return experiment_state_label    
 
     def point_end(self, epoch_time_s):
-        assert len(self.epoch_time_start_s) - 1 == len(self.epoch_time_stop_s)
-        self.epoch_time_stop_s.append(epoch_time_s)
+        assert len(self.epoch_time_start_s) - 1 == len(self.epoch_time_end_s)
+        self.epoch_time_end_s.append(epoch_time_s)
 
     def write_experiment_state_file(self, f, header):
         if header:
             f.write("# unixnano, state label\n")
-        for start, end, label in zip(self.epoch_time_start_s, self.epoch_time_stop_s, self.experiment_state_labels):
+        for i, (start, end) in enumerate(zip(self.epoch_time_start_s, self.epoch_time_end_s)):
+            label =  f"SCAN{self.scan_num}_{i}"
             f.write(f"{int(start*1e9)}, {label}\n")
             f.write(f"{int(end*1e9)}, PAUSE\n")
 
@@ -62,7 +47,6 @@ class Scan():
         with io.StringIO() as f:
             self.write_experiment_state_file(f, header)
             return f.getvalue()
-
 
     def end(self):
         assert not self._ended
@@ -158,17 +142,14 @@ class TESScanner():
         # bin_centers, counts = self.data.hist("realtime_energy", self.rois_bin_edges)
         # return counts[::2]
 
-    def scan_define(self, var_names, scan_num, beamtime_id, ext_id, sample_id, sample_desc):
+    def scan_define(self, var_name, var_unit, scan_num, beamtime_id, ext_id, sample_id, sample_desc, extra):
         self.state.scan_start()
-        self.scan = Scan(var_names, scan_num, beamtime_id, ext_id, sample_id, sample_desc)
+        self.scan = Scan(var_name, var_unit, scan_num, beamtime_id, ext_id, sample_id, sample_desc, extra)
 
-    def scan_point_start(self, scan_vars_dict):
-        # normally we do a self.state call first, here we
-        # want to validate the scan points first
-        validate_values = self.scan.validate_point(scan_vars_dict)
+    def scan_point_start(self, scan_var, extra):
         self.state.scan_point_start()
         epoch_time_s = time.time()
-        experiment_state_label = self.scan.point_start(validate_values, epoch_time_s)
+        experiment_state_label = self.scan.point_start(scan_var, epoch_time_s, extra)
         self.dastard.set_experiment_state(experiment_state_label)
 
     def scan_point_end(self):

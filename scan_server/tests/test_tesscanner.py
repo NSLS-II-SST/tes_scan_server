@@ -33,17 +33,15 @@ def test_tes_scanner():
     scanner.calibration_data_start(sample_id = 0, sample_name = "test_sample", routine = "ssrl_10_1_mix_cal")
     scanner.calibration_data_end()
     scanner.calibration_learn_from_last_data()
-    scanner.scan_define(var_names=["mono_eV", "temp_K"], scan_num=0, beamtime_id="test_scan", 
-                ext_id=0, sample_id=0, sample_desc="test_desc")
+    scanner.scan_define(var_name="mono", var_unit="eV", scan_num=0, beamtime_id="test_scan", 
+                ext_id=0, sample_id=0, sample_desc="test_desc", extra = {"tempK":43.2})
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
         scanner.file_start() # start file while file started not allowed
-    scanner.scan_point_start({"mono_eV": 122, "temp_K": 4.2})
+    scanner.scan_point_start(122, extra=None)
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
-        scanner.scan_point_start({"mono_eV": 122, "temp_K": 4.2}) # start point 2x in a row not allowed
+        scanner.scan_point_start(122, extra=None) # start point 2x in a row not allowed
     scanner.scan_point_end()
-    with pytest.raises(AssertionError):
-        scanner.scan_point_start({"test_wrong_var_name": 123, "temp_K": 4.2}) # wrong variable name not allwoed
-    scanner.scan_point_start({"mono_eV": 123, "temp_K": 4.2})
+    scanner.scan_point_start(123, extra=None)
     scanner.scan_point_end()
     scanner.scan_end()
     with pytest.raises(AssertionError):

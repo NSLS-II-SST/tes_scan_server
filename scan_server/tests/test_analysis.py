@@ -17,18 +17,25 @@ for scan_log in scan_logs:
     assert all(np.array(list(scan_log["mono"].keys())) == np.array(scan0_mono_vals))
 
 def test_scan():
-    scan = Scan(var_names=["mono_eV"], scan_num=0, beamtime_id="test_scan", 
-                ext_id=0, sample_id=0, sample_desc="test_desc")
+    scan = Scan(var_name="mono", var_unit="eV", scan_num=0, beamtime_id="test_scan", 
+                ext_id=0, sample_id=0, sample_desc="test_desc", extra=None)
     for j, scan_log in enumerate(scan_logs):
         for i, mono_val in enumerate(scan0_mono_vals):
             start, end = scan_log["mono"][mono_val]
-            d = {"mono_eV": mono_val}
-            validated_values = scan.validate_point(d)
-            scan.point_start(validated_values, start)
+            scan.point_start(mono_val, start, extra=None)
             scan.point_end(end)
     scan.end()
     print(scan.experiment_state_file_as_str(header=True))
 
+
+# scan = Scan(var_name="mono", var_unit="eV", scan_num=0, beamtime_id="test_scan", 
+#             ext_id=0, sample_id=0, sample_desc="test_desc", extra=None)
+# for j, scan_log in enumerate(scan_logs[:1]):
+#     for i, mono_val in enumerate(scan0_mono_vals):
+#         start, end = scan_log["mono"][mono_val]
+#         scan.point_start(mono_val, start)
+#         scan.point_end(end)
+# scan.end()
 
 # # write a dummy experiment state file, since the data didn't come with one
 # with open(tempfile.mktemp(), "w") as f:
@@ -47,7 +54,7 @@ def test_scan():
 #     f.write(f"{cal_stop}, PAUSE\n")
 # experiment_state_file = mass.off.channels.ExperimentStateFile(f.name)
 
-# data = ChannelGroup(getOffFileListFromOneFile(os.path.join(d, "20200219_chan1.off"), maxChans=8),
+# data = ChannelGroup(getOffFileListFromOneFile(os.path.join(util.ssrl_dir, "20200219_chan1.off"), maxChans=8),
 #         experimentStateFile=experiment_state_file)
 # data.setDefaultBinsize(0.5)
 
@@ -66,25 +73,31 @@ def test_scan():
 # ds = data[1] # the above loop rebinds ds to the last dataset, but lets keep looking at the same one
 # ds.learnResidualStdDevCut(n_sigma_equiv=10, plot=False, setDefault=True)
 
-# data.alignToReferenceChannel(ds, "filtValue", np.arange(0,30000,6))
+# data.alignToReferenceChannel(ds, "filtValue", np.arange(0, 30000,  6))
 # data.calibrateFollowingPlan("filtValue", calibratedName="energy",
 #     dlo=15, dhi=15, overwriteRecipe=True)
 # # ds.diagnoseCalibration()
+# # 
 
-# # i should limit the number of states auto plotted?
-# bin_edges = np.arange(0, 1000, 1)
-# n_pts = len(scan0_mono_vals)
-# hist2d = np.zeros((len(bin_edges)-1, n_pts))
-# for i, mono_val in enumerate(scan0_mono_vals):
-#     states = [f"SCAN{j}_POINT{i}" for j in range(len(scan_logs))]
-#     x, y = data.hist(np.arange(0,1000,1), "energy", states=states)
-#     hist2d[:, i] = y
-
-# plt.imshow(hist2d)
-# plt.ylabel("hist index")
-# plt.xlabel("mono step number")
+# def scan_2d_hist(scan, data, bin_edges, attr):
+#     starts_nano = (1e9*np.array(scan.epoch_time_start_s)).astype(int)
+#     ends_nano = (1e9*np.array(scan.epoch_time_end_s)).astype(int)
+#     assert len(starts_nano) == len(ends_nano)
+#     assert len(scan.var_names) == 1
+#     var_name = scan.var_names[0]
+#     var_vals = np.array([vals[0] for vals in scan.var_values]) 
+#     hist2d = np.zeros((len(bin_edges)-1, len(starts_nano)))
+#     for ds in data.values():
+#         ind_starts = np.searchsorted(ds.unixnano, starts_nano)
+#         ind_ends = np.searchsorted(ds.unixnano, ends_nano)
+#         for i, (a, b) in enumerate(zip(ind_starts, ind_ends)):
+#             states = slice(a, b, None)
+#             bin_centers, counts = ds.hist(bin_edges, attr, states=states)
+#             hist2d[:, i] += counts
+#     return hist2d, var_name, var_vals, bin_centers, attr
+# hist2d, var_name, var_vals, bin_centers, attr = scan_2d_hist(scan, data, np.arange(0, 1000, 1), "energy")
 
 # plt.figure()
-# plt.contourf(scan0_mono_vals, x, hist2d, levels=np.linspace(0, hist2d.max()) , cmap="gist_heat")
-# plt.xlabel("mono (eV)")
-# plt.ylabel("emission energy (eV)")
+# plt.contourf(var_vals, bin_centers, hist2d,levels=np.linspace(0, hist2d.max()), cmap="gist_heat")
+# plt.xlabel(var_name)
+# plt.ylabel(attr)
