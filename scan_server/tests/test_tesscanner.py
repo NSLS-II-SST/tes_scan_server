@@ -56,3 +56,13 @@ def test_tes_scanner():
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
         scanner.file_end() # end file while file ended not allowed
 
+
+def test_scan():
+    scan = Scan(var_name="mono", var_unit="eV", scan_num=0, beamtime_id="test_Beamtime", 
+                ext_id=0, sample_id=0, sample_desc="test_desc", extra=None)
+    for i, mono_val in np.arange(1000):
+        start, end = i, i+0.5
+        scan.point_start(mono_val, start, extra=None)
+        scan.point_end(end)
+    scan.end()
+    print(scan.experiment_state_file_as_str(header=True))

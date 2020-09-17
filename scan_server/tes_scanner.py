@@ -52,6 +52,12 @@ class Scan():
         assert not self._ended
         self._ended = True
 
+    def description_str(self):
+        return f"scan{self.scan_num} sample{self.sample_id} beamtime_id{self.beamtime_id}"
+
+    def __repr__(self):
+        return f"<Scan num{self.scan_num} beamtime_id{self.beamtime_id} ext_id{self.ext_id} npts{len(self.var_values)}"
+
 
 class ScannerState(StateMachine):
     """defines allowed state transitions, transitions will error if you do an invalid one"""
@@ -173,7 +179,6 @@ class TESScanner():
         self.state.file_end()
         self.reset()
     
-
 
 
 
