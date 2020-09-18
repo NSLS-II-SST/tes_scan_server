@@ -4,12 +4,14 @@ import numpy as np
 import time
 from . import routines
 import mass
+from mass.off import ChannelGroup, getOffFileListFromOneFile, Channel, labelPeak, labelPeaks
 from dataclasses import dataclass, field
 from dataclasses_json import dataclass_json
 import io
 import pylab as plt
 import os
 from pathlib import Path
+from . import mass_monkey_patch
 
 
 @dataclass_json
@@ -83,11 +85,9 @@ class Scan():
         var_vals = self.var_values
         hist2d = np.zeros((len(bin_edges)-1, len(starts_nano)))
         for ds in data.values():
-            ind_starts = np.searchsorted(ds.unixnano, starts_nano)
-            ind_ends = np.searchsorted(ds.unixnano, ends_nano)
-            for i, (a, b) in enumerate(zip(ind_starts, ind_ends)):
-                states = slice(a, b, None)
-                bin_centers, counts = ds.hist(bin_edges, attr, states=states)
+            states = ds.unixnanoToStates(starts_nano, ends_nano)
+            for i, _state in enumerate(states):
+                bin_centers, counts = ds.hist(bin_edges, attr, states=_state)
                 hist2d[:, i] += counts
         return ScanHist2DResult(hist2d, var_name, var_unit, var_vals, bin_centers, attr, "eV", self.description_str(), data.shortName)
 
@@ -161,7 +161,7 @@ class TESScanner():
         self.last_scan = None
         self.scan = None
         self.data = None
-        self.roi_counts_start = None
+        self.roi_counts_start_unixnano = None
         self.rois_bin_edges = None
         self.calibration_to_routine: List[str] = [] 
         self.next_cal_number: int = 0
@@ -169,13 +169,12 @@ class TESScanner():
     def file_start(self):
         self.state.file_start()
         self.filename = self.dastard.start_file()
-        self.dastard.set_experiment_state("PAUSE")
-        # self.data = mass.ChannelGroup(self.filename)
+        self.data = ChannelGroup(getOffFileListFromOneFile(self.filename))
 
     def calibration_data_start(self, sample_id: int, sample_name: str, routine: str):
         self.state.cal_data_start()
         self.dastard.set_pulse_triggers()
-        self.dastard.set_experiment_state(f"CALIBRATION{self.next_cal_number}")
+        self.dastard.set_experiment_state(f"CAL{self.next_cal_number}")
         self.calibration_to_routine.append(routine)
         self.next_cal_number += 1
         assert len(self.calibration_to_routine) == self.next_cal_number
@@ -183,7 +182,6 @@ class TESScanner():
     def calibration_data_end(self):
         self.state.cal_data_end()
         self.dastard.set_experiment_state("PAUSE")
-        # self.data.update_from_disk()
 
     def calibration_learn_from_last_data(self):
         last_cal_number = self.next_cal_number - 1
@@ -195,10 +193,12 @@ class TESScanner():
     def _calibration_apply_routine(self, routine, cal_number, data):
         # print(f"{routine=} {cal_number=}")
         routine = routines.get(routine)
+        data.refreshFromFiles()
         return routine(cal_number, data)
 
     def roi_set(self, rois_list):
         # roi list is a a list of pairs of lo, hi energy pairs
+        assert len(rois_list) > 0
         bin_edges = []
         for (lo_ev, hi_ev) in rois_list:
             assert hi_ev > lo_ev
@@ -209,13 +209,16 @@ class TESScanner():
         self.rois_bin_edges = np.array(bin_edges)
     
     def roi_start_counts(self):
-        self.roi_counts_start = time.time()
+        self.roi_counts_start_unixnano = time_unixnano()
     
     def roi_get_counts(self):
         "first call set_rois, then start_rois_counts, then this will return counts in all rois since last call to start_rois_counts"
-        t = self.roi_counts_start
-        # bin_centers, counts = self.data.hist("realtime_energy", self.rois_bin_edges)
-        # return counts[::2]
+        assert self.roi_counts_start_unixnano is not None, "first call set_rois, then start_rois_counts, roi_start_counts, then roi_get_counts"
+        assert self.rois_bin_edges is not None, "rois_bin_edges is None: first call set_rois, then start_rois_counts, roi_start_counts, then roi_get_counts"
+        a, b = self.roi_counts_start_unixnano, time_unixnano()
+        self.roi_counts_start_unixnano = None
+        bin_centers, counts = self.data.histWithUnixnanos(self.rois_bin_edges, "energy", [a], [b])
+        return counts[::2]
 
     def scan_start(self, var_name, var_unit, scan_num, beamtime_id, ext_id, sample_id, sample_desc, extra, drift_plan):
         assert isinstance(scan_num, int)
@@ -228,18 +231,17 @@ class TESScanner():
             cal_drift_plan=CalDriftPlan(last_cal_number = self.next_cal_number - 1, 
                                         cal_routine = self.calibration_to_routine[self.next_cal_number - 1],
                                         drift_plan = drift_plan))
+        self.dastard.set_experiment_state(f"SCAN{scan_num}")
 
     def scan_point_start(self, scan_var, extra):
         self.state.scan_point_start()
         epoch_time_s = time.time()
-        experiment_state_label = self.scan.point_start(scan_var, epoch_time_s, extra)
-        self.dastard.set_experiment_state(experiment_state_label)
+        self.scan.point_start(scan_var, epoch_time_s, extra)
 
     def scan_point_end(self):
         self.state.scan_point_end()
         epoch_time_s = time.time()
         self.scan.point_end(epoch_time_s)
-        self.dastard.set_experiment_state("PAUSE")
 
     def scan_end(self):
         self.state.scan_end()
@@ -247,6 +249,7 @@ class TESScanner():
         self.scan.to_disk(self.scan_filename(self.scan.scan_num))
         self.last_scan = self.scan
         self.scan = None
+        self.dastard.set_experiment_state("PAUSE")
         
     def scan_start_calc_last_outputs(self, drift_correct_strategy):
         # self.validate_drift_correct_strategy(drift_correct_strategy)
@@ -273,34 +276,6 @@ class TESScanner():
         if drift_plan not in ["testing_not_real"]:
             raise Exception("invalid drift plan")
 
+def time_unixnano():
+    return int(1e9*time.time())
 
-
-
-# class ScanServer():
-#     """talks to beamline and TESScanner"""
-#     def __init__(self, port, command_resolver):
-#         self.dastard_dastard = None
-#         self.socket = None
-
-#     def get_command(self):
-#         try:
-#             return self.socket.read()
-#         except TimeoutError:
-#             return None
-
-#     def run(self):
-#         while True:
-#             cmd = self.get_command()
-#             if cmd is not None:
-#                 try:
-#                     response = self.resolve_command(cmd)
-#                     self.log(cmd, response)
-#                     self.respond(response)
-#                 except Exception as ex:
-#                     error_desc = get_backtrace()
-#                     self.log(cmd, error_desc)
-#                     sys.exit()
-#             time.sleep(0.01)
-    
-#     def resolve_command(self, cmd):
-#         command_resolver(cmd)

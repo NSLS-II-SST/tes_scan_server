@@ -9,6 +9,7 @@ try:
 except:
     d0 = os.getcwd()
 ssrl_dir = os.path.join(d0, "data", "ssrl_10_1_scan")
+ssrl_filename_pattern = os.path.join(ssrl_dir, "20200219_%s.%s")
 
 with open(os.path.join(ssrl_dir, "20200219_016_log"), "r") as f:
     d16 = list(yaml.load_all(f, Loader=yaml.SafeLoader))
@@ -43,3 +44,32 @@ _scans = [scan_from_log(log) for log in scan_logs]
 
 def scans():
     return _scans
+
+def make_states_to_unixnano():
+    _states_to_unixnano = {"PAUSE" : []}
+    cal_start, cal_stop = int(d16[1]["header"]["start"]*1e9), int(d16[1]["header"]["stop"]*1e9)
+    _states_to_unixnano[f"CAL0"] = cal_start
+    _states_to_unixnano["PAUSE"].append(cal_stop)
+    for j, scan in enumerate(scans()):
+        _states_to_unixnano[f"SCAN{j}"] = int(scan.epoch_time_start_s[0]*1e9)
+        _states_to_unixnano["PAUSE"].append(int(scan.epoch_time_end_s[-1]*1e9))
+    cal_start, cal_stop = int(d30[1]["header"]["start"]*1e9), int(d30[1]["header"]["stop"]*1e9)
+    _states_to_unixnano[f"CAL1"] = cal_start
+    _states_to_unixnano["PAUSE"].append(cal_stop)
+    return _states_to_unixnano
+
+_states_to_unixnano = make_states_to_unixnano()
+
+def write_ssrl_experiment_state_file(filename):
+    with open(filename, "w") as f:
+        f.write("# unixnano, label\n")
+        f.write("0, START\n")
+        cal_start, cal_stop = int(d16[1]["header"]["start"]*1e9), int(d16[1]["header"]["stop"]*1e9)
+        f.write(f"{cal_start}, CAL0\n")
+        f.write(f"{cal_stop}, PAUSE\n")
+        for j, scan in enumerate(scans()):
+            f.write(f"{int(scan.epoch_time_start_s[0]*1e9)}, SCAN{j}\n")
+            f.write(f"{int(scan.epoch_time_end_s[-1]*1e9)}, PAUSE\n")
+        cal_start, cal_stop = int(d30[1]["header"]["start"]*1e9), int(d30[1]["header"]["stop"]*1e9)
+        f.write(f"{cal_start}, CAL1\n")
+        f.write(f"{cal_stop}, PAUSE\n")

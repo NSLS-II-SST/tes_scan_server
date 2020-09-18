@@ -1,10 +1,29 @@
+import numpy as np
+
+
 def ssrl_10_1_mix_cal(cal_number, data):
-    print(f"{cal_number=} {data=}")
-    # ds = data.firstGoodChannel
-    # ds.approxCal(lines=["CKAlpha", "OKAlpha", "FeLAlpha"])
-    # data.alignToReferenceChannel(ds)
-    # data.calibrateFollowingPlan()
-    return data
+    data.setDefaultBinsize(0.5)
+
+    cal_state = f"CAL{cal_number}"
+    ds = data.firstGoodChannel()
+    ds.calibrationPlanInit("filtValue")
+    ds.calibrationPlanAddPoint(4374, 'CKAlpha', states=cal_state)
+    ds.calibrationPlanAddPoint(5992, 'NKAlpha', states=cal_state)
+    ds.calibrationPlanAddPoint(7789, 'OKAlpha', states=cal_state)
+    ds.calibrationPlanAddPoint(10047, 'FeLAlpha', states=cal_state)
+    ds.calibrationPlanAddPoint(11730, 'NiLAlpha', states=cal_state)
+    ds.calibrationPlanAddPoint(12599, 'CuLAlpha', states=cal_state)
+    # ds.calibrationPlanAddPoint(13350, "mono", energy=1000)
+
+    for ds in data.values()[1:]:
+        ds.learnResidualStdDevCut(n_sigma_equiv=10, plot=False, setDefault=True)
+    ds = data[1] # the above loop rebinds ds to the last dataset, but lets keep looking at the same one
+    ds.learnResidualStdDevCut(n_sigma_equiv=10, plot=False, setDefault=True)
+
+    data.alignToReferenceChannel(ds, "filtValue", np.arange(0, 30000,  6))
+    data.calibrateFollowingPlan("filtValue", calibratedName="energy",
+        dlo=15, dhi=15, overwriteRecipe=True)
+    
 
 
 

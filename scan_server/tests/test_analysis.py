@@ -9,7 +9,6 @@ import pylab as plt
 from scan_server.tests import util
 
 
-
 def test_analysis():
 
 
@@ -17,19 +16,10 @@ def test_analysis():
 
 
     # write a dummy experiment state file, since the data didn't come with one
-    with open(tempfile.mktemp(), "w") as f:
-        f.write("# yo yo\n")
-        f.write("0, START\n")
-        cal_start, cal_stop = int(d16[1]["header"]["start"]*1e9), int(d16[1]["header"]["stop"]*1e9)
-        f.write(f"{cal_start}, CAL0\n")
-        f.write(f"{cal_stop}, PAUSE\n")
-        for j, scan in enumerate(util.scans()):
-            f.write(f"{int(scan.epoch_time_start_s[0]*1e9)}, SCAN{j}\n")
-            f.write(f"{int(scan.epoch_time_end_s[-1]*1e9)}, PAUSE\n")
-        cal_start, cal_stop = int(d30[1]["header"]["start"]*1e9), int(d30[1]["header"]["stop"]*1e9)
-        f.write(f"{cal_start}, CAL1\n")
-        f.write(f"{cal_stop}, PAUSE\n")
-    experiment_state_file = mass.off.channels.ExperimentStateFile(f.name)
+    filename = tempfile.mktemp()
+    util.write_ssrl_experiment_state_file(filename)
+
+    experiment_state_file = mass.off.channels.ExperimentStateFile(filename)
 
     data = ChannelGroup(getOffFileListFromOneFile(os.path.join(util.ssrl_dir, "20200219_chan1.off"), maxChans=3),
             experimentStateFile=experiment_state_file)
@@ -54,10 +44,6 @@ def test_analysis():
     data.calibrateFollowingPlan("filtValue", calibratedName="energy",
         dlo=15, dhi=15, overwriteRecipe=True)
     # ds.diagnoseCalibration()
-    # 
-
-
-
 
 
     results = [scan.hist2d(data, np.arange(0, 1000, 1), "energy") for scan in util.scans()]

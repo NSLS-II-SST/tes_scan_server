@@ -4,8 +4,12 @@ import statemachine
 import numpy as np
 import tempfile
 import os
+from . import util
+
 
 class MockClient(DastardClient):
+    expected_states = ["CAL0", "PAUSE", "SCAN33", "PAUSE", "CAL1", "PAUSE"]
+
     def _call(self, method, params):
         self._last_method = method
         self._last_params = params
@@ -13,6 +17,16 @@ class MockClient(DastardClient):
 
     def _connect(self):
         return  # dont try to connect the socket
+
+    def set_experiment_state(self, state):
+        try:
+            self.state_i
+        except:
+            self.state_i = 0
+        assert isinstance(state, str)
+        expected = self.expected_states[self.state_i]
+        assert state == expected, f"got {state} for i={self.state_i}, expected {expected}"
+        self.state_i += 1
 
 
 class MockListener():
@@ -31,13 +45,15 @@ def test_tes_scanner():
     listener = MockListener()
     client = MockClient(("test_url", "test_port"), listener, pulse_trigger_params = None, noise_trigger_params = None)
     scanner = TESScanner(dastard = client, beamtime_id ="test", base_log_dir=base_log_dir)
-    listener.set_next(topic="WRITING", contents ={"Active":True, "FilenamePattern": "test_pattern"})
+    listener.set_next(topic="WRITING", contents ={"Active":True, "FilenamePattern": util.ssrl_filename_pattern})
+    util.write_ssrl_experiment_state_file(util.ssrl_filename_pattern%("experiment_state","txt"))
+    #write the full experiment state file all at once, it is much easier than emulating the data arriving
     scanner.file_start()
     assert client._last_method == "SourceControl.WriteControl"
     scanner.calibration_data_start(sample_id = 0, sample_name = "test_sample", routine = "ssrl_10_1_mix_cal")
     scanner.calibration_data_end()
     scanner.calibration_learn_from_last_data()
-    scanner.scan_start(var_name="mono", var_unit="eV", scan_num=0, beamtime_id="test_scan", 
+    scanner.scan_start(var_name="mono", var_unit="eV", scan_num=33, beamtime_id="test_scan", 
                 ext_id=0, sample_id=0, sample_desc="test_desc", extra = {"tempK":43.2}, 
                 drift_plan = "testing_not_real")
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
@@ -57,9 +73,12 @@ def test_tes_scanner():
     scanner.calibration_data_start(sample_id = 0, sample_name = "test_sample", routine = "ssrl_10_1_mix_cal")
     scanner.calibration_data_end()
     scanner.scan_start_calc_last_outputs(drift_correct_strategy="before_after_interp")
+    result = scanner.data.linefit("OKAlpha", attr="energy", plot=False)
+    assert result.params["fwhm"].value < 7
     scanner.file_end()
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
         scanner.file_end() # end file while file ended not allowed
+ 
 
 
 def test_scan():
