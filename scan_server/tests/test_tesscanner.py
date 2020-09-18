@@ -1,4 +1,4 @@
-from scan_server import TESScanner, Scan, DastardClient, CalDriftPlan
+from scan_server import TESScanner, Scan, DastardClient, CalibrationLog
 import pytest
 import statemachine
 import numpy as np
@@ -55,7 +55,7 @@ def test_tes_scanner():
     scanner.calibration_learn_from_last_data()
     scanner.scan_start(var_name="mono", var_unit="eV", scan_num=33, beamtime_id="test_scan", 
                 ext_id=0, sample_id=0, sample_desc="test_desc", extra = {"tempK":43.2}, 
-                drift_plan = "testing_not_real")
+                drift_correction_plan = "testing_not_real")
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
         scanner.file_start() # start file while file started not allowed
     scanner.scan_point_start(122, extra={})
@@ -72,19 +72,24 @@ def test_tes_scanner():
     scanner.roi_get_counts()
     scanner.calibration_data_start(sample_id = 0, sample_name = "test_sample", routine = "ssrl_10_1_mix_cal")
     scanner.calibration_data_end()
-    scanner.scan_start_calc_last_outputs(drift_correct_strategy="before_after_interp")
+    scanner.scan_start_calc_last_outputs(drift_correction_plan="before_after_interp")
     result = scanner.data.linefit("OKAlpha", attr="energy", plot=False)
     assert result.params["fwhm"].value < 7
     scanner.file_end()
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
         scanner.file_end() # end file while file ended not allowed
  
+    with open(os.path.join(util.ssrl_dir, "20200219_CAL0.json"), "r") as f:
+        cal0 = CalibrationLog.from_json(f.read())
+    with open(os.path.join(util.ssrl_dir, "20200219_CAL1.json"), "r") as f:
+        cal1 = CalibrationLog.from_json(f.read())
+    assert cal1 != cal0
 
 
 def test_scan():
     scan = Scan(var_name="mono", var_unit="eV", scan_num=0, beamtime_id="test_Beamtime", 
                 ext_id=0, sample_id=0, sample_desc="test_desc", extra={}, data_path="no actual data",
-                cal_drift_plan=CalDriftPlan(-1, "test", "test"))
+                cal_log = CalibrationLog(1, 1, "", "", "", "", 1), drift_correction_plan = "none")
     for i, mono_val in enumerate(np.arange(5)):
         start, end = i, i+0.5
         scan.point_start(mono_val, start, extra={})
@@ -99,3 +104,4 @@ def test_scan():
         scan2 = Scan.from_json(f.read())
     assert scan == scan2
     scan.experiment_state_file_as_str(header=True)
+

@@ -79,8 +79,8 @@ class DastardClient():
         response = self._call("SourceControl.WriteControl", params)
         contents = self.listener.get_message_with_topic("WRITING")
         assert contents["Active"]
-        filename_pattern = contents["FilenamePattern"]%("chan1","off")
-        return filename_pattern
+        off_filename = contents["FilenamePattern"]%("chan1","off")
+        return off_filename
 
     def stop_file(self):
         payload = {"Request": "Stop"}

@@ -14,13 +14,22 @@ from pathlib import Path
 from . import mass_monkey_patch
 
 
+
 @dataclass_json
 @dataclass
-class CalDriftPlan():
-    last_cal_number: int
-    cal_routine: str
-    drift_plan: str
+class CalibrationLog():
+    start_unixnano: int
+    end_unixnano: int
+    off_filename: str
+    sample_id: str
+    beamtime_id: str
+    routine: str
+    cal_number: int
 
+    def to_disk(self, filename):
+        assert not os.path.isfile(filename)
+        with open(filename, "w") as f:
+            f.write(self.to_json())
 
 @dataclass_json
 @dataclass
@@ -34,7 +43,8 @@ class Scan():
     sample_desc: str
     extra: dict
     data_path: str
-    cal_drift_plan: CalDriftPlan
+    cal_log: CalibrationLog
+    drift_correction_plan: str
     point_extras: List[dict] = field(default_factory=list)
     var_values: List[float] = field(default_factory=list)
     epoch_time_start_s: List[int] = field(default_factory=list)
@@ -165,30 +175,37 @@ class TESScanner():
         self.rois_bin_edges = None
         self.calibration_to_routine: List[str] = [] 
         self.next_cal_number: int = 0
+        self.calibration_log = None
+        self.off_filename = None
 
     def file_start(self):
         self.state.file_start()
-        self.filename = self.dastard.start_file()
-        self.data = ChannelGroup(getOffFileListFromOneFile(self.filename))
+        self.off_filename = self.dastard.start_file()
+        self.data = ChannelGroup(getOffFileListFromOneFile(self.off_filename))
 
     def calibration_data_start(self, sample_id: int, sample_name: str, routine: str):
         self.state.cal_data_start()
         self.dastard.set_pulse_triggers()
         self.dastard.set_experiment_state(f"CAL{self.next_cal_number}")
         self.calibration_to_routine.append(routine)
+        self.calibration_log = CalibrationLog(start_unixnano=time_unixnano(),
+            end_unixnano=None, off_filename=self.off_filename,
+            sample_id = sample_id, beamtime_id = self.beamtime_id, routine = routine, 
+            cal_number = self.next_cal_number)
+        self.calibration_info_stash = {"sample_id": sample_id, "sample_name": sample_name, "routine": routine, "start": time_unixnano()}
         self.next_cal_number += 1
         assert len(self.calibration_to_routine) == self.next_cal_number
 
     def calibration_data_end(self):
         self.state.cal_data_end()
         self.dastard.set_experiment_state("PAUSE")
+        self.calibration_log.end_unixnano = time_unixnano()
+        self.calibration_log.to_disk(self.cal_filename(self.calibration_log.cal_number))
 
     def calibration_learn_from_last_data(self):
-        last_cal_number = self.next_cal_number - 1
-        routine = self.calibration_to_routine[last_cal_number]
-        result = self._calibration_apply_routine(routine, last_cal_number, self.data)
-        # result.error_if_energy_resolution_too_bad()
-        # now we can access realtime_energy
+        self._calibration_apply_routine(self.calibration_log.routine, 
+            self.calibration_log.cal_number, self.data)
+        # now we can access energy
 
     def _calibration_apply_routine(self, routine, cal_number, data):
         # print(f"{routine=} {cal_number=}")
@@ -220,17 +237,16 @@ class TESScanner():
         bin_centers, counts = self.data.histWithUnixnanos(self.rois_bin_edges, "energy", [a], [b])
         return counts[::2]
 
-    def scan_start(self, var_name, var_unit, scan_num, beamtime_id, ext_id, sample_id, sample_desc, extra, drift_plan):
+    def scan_start(self, var_name, var_unit, scan_num, beamtime_id, ext_id, sample_id, sample_desc, extra, drift_correction_plan):
         assert isinstance(scan_num, int)
         assert not os.path.isfile(self.scan_filename(scan_num))
         self.state.scan_start()
         data_path = self.dastard.get_data_path()
-        self.validate_drift_plan(drift_plan)
+        self.validate_drift_correction_plan(drift_correction_plan)
         self.scan = Scan(var_name, var_unit, scan_num, beamtime_id, ext_id, sample_id, 
             sample_desc, extra, data_path,
-            cal_drift_plan=CalDriftPlan(last_cal_number = self.next_cal_number - 1, 
-                                        cal_routine = self.calibration_to_routine[self.next_cal_number - 1],
-                                        drift_plan = drift_plan))
+            cal_log=self.calibration_log,
+            drift_correction_plan=drift_correction_plan)
         self.dastard.set_experiment_state(f"SCAN{scan_num}")
 
     def scan_point_start(self, scan_var, extra):
@@ -246,14 +262,15 @@ class TESScanner():
     def scan_end(self):
         self.state.scan_end()
         # self.scan.end()
+        print(self.scan)
         self.scan.to_disk(self.scan_filename(self.scan.scan_num))
         self.last_scan = self.scan
         self.scan = None
         self.dastard.set_experiment_state("PAUSE")
         
-    def scan_start_calc_last_outputs(self, drift_correct_strategy):
-        # self.validate_drift_correct_strategy(drift_correct_strategy)
-        # self.launch_process_to_calc_outputs(drift_correct_strategy)
+    def scan_start_calc_last_outputs(self, drift_correction_plan):
+        # self.validate_drift_correction_plan(drift_correction_plan)
+        # self.launch_process_to_calc_outputs(drift_correction_plan)
         return
 
     def file_end(self):
@@ -272,8 +289,16 @@ class TESScanner():
         assert not os.path.isfile(filename)
         return filename
 
-    def validate_drift_plan(self, drift_plan):
-        if drift_plan not in ["testing_not_real"]:
+    def cal_filename(self, cal_number):
+        dirname = os.path.join(self.base_log_dir, self.beamtime_id, "calibration_logs")
+        Path(dirname).mkdir(parents=True, exist_ok=True)
+        basename, channum = mass.ljh_util.ljh_basename_channum(self.off_filename)
+        filename = os.path.join(dirname, f"{basename}_CAL{cal_number}.json")
+        return filename
+
+
+    def validate_drift_correction_plan(self, drift_correction_plan):
+        if drift_correction_plan not in ["testing_not_real"]:
             raise Exception("invalid drift plan")
 
 def time_unixnano():
