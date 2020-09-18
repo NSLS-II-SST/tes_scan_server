@@ -27,9 +27,10 @@ class MockListener():
         return self.contents
 
 def test_tes_scanner():
+    base_log_dir = tempfile.TemporaryDirectory().name 
     listener = MockListener()
     client = MockClient(("test_url", "test_port"), listener, pulse_trigger_params = None, noise_trigger_params = None)
-    scanner = TESScanner(dastard = client, beamtime_id ="test")
+    scanner = TESScanner(dastard = client, beamtime_id ="test", base_log_dir=base_log_dir)
     listener.set_next(topic="WRITING", contents ={"Active":True, "FilenamePattern": "test_pattern"})
     scanner.file_start()
     assert client._last_method == "SourceControl.WriteControl"
