@@ -2,6 +2,8 @@ from scan_server import TESScanner, Scan, DastardClient
 import pytest
 import statemachine
 import numpy as np
+import tempfile
+import os
 
 class MockClient(DastardClient):
     def _call(self, method, params):
@@ -38,11 +40,11 @@ def test_tes_scanner():
                 ext_id=0, sample_id=0, sample_desc="test_desc", extra = {"tempK":43.2})
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
         scanner.file_start() # start file while file started not allowed
-    scanner.scan_point_start(122, extra=None)
+    scanner.scan_point_start(122, extra={})
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
-        scanner.scan_point_start(122, extra=None) # start point 2x in a row not allowed
+        scanner.scan_point_start(122, extra={}) # start point 2x in a row not allowed
     scanner.scan_point_end()
-    scanner.scan_point_start(123, extra=None)
+    scanner.scan_point_start(123, extra={})
     scanner.scan_point_end()
     scanner.scan_end()
     with pytest.raises(AssertionError):
@@ -61,9 +63,17 @@ def test_tes_scanner():
 def test_scan():
     scan = Scan(var_name="mono", var_unit="eV", scan_num=0, beamtime_id="test_Beamtime", 
                 ext_id=0, sample_id=0, sample_desc="test_desc", extra=None)
-    for i, mono_val in enumerate(np.arange(1000)):
+    for i, mono_val in enumerate(np.arange(5)):
         start, end = i, i+0.5
-        scan.point_start(mono_val, start, extra=None)
+        scan.point_start(mono_val, start, extra={})
         scan.point_end(end)
     scan.end()
-    print(scan.experiment_state_file_as_str(header=True))
+    filename = tempfile.mktemp()
+    d = scan.to_dict()
+    scan2 = Scan.from_dict(d)
+    assert scan == scan2
+    scan.to_disk(filename)
+    with open(filename, "rb") as f:
+        scan2 = Scan.from_json(f.read())
+    assert scan == scan2
+    scan.experiment_state_file_as_str(header=True)

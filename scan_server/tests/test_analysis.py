@@ -31,7 +31,7 @@ def test_analysis():
         f.write(f"{cal_stop}, PAUSE\n")
     experiment_state_file = mass.off.channels.ExperimentStateFile(f.name)
 
-    data = ChannelGroup(getOffFileListFromOneFile(os.path.join(util.ssrl_dir, "20200219_chan1.off"), maxChans=8),
+    data = ChannelGroup(getOffFileListFromOneFile(os.path.join(util.ssrl_dir, "20200219_chan1.off"), maxChans=3),
             experimentStateFile=experiment_state_file)
     data.setDefaultBinsize(0.5)
 

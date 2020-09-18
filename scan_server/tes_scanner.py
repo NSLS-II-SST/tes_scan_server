@@ -5,10 +5,13 @@ import time
 from . import routines
 import mass
 from dataclasses import dataclass, field
+from dataclasses_json import dataclass_json
 import io
 import pylab as plt
+import os
+from numpyencoder import NumpyEncoder
 
-
+@dataclass_json
 @dataclass
 class Scan():
     var_name: str
@@ -19,8 +22,8 @@ class Scan():
     sample_id: int
     sample_desc: str
     extra: dict
-    point_extras: list = field(default_factory=list)
-    var_values: list = field(default_factory=list)
+    point_extras: List[dict] = field(default_factory=list)
+    var_values: List[float] = field(default_factory=list)
     epoch_time_start_s: List[int] = field(default_factory=list)
     epoch_time_end_s: List[int] = field(default_factory=list)
     _ended: bool = False
@@ -28,7 +31,8 @@ class Scan():
     def point_start(self, scan_var, epoch_time_s, extra):
         assert not self._ended
         assert len(self.epoch_time_start_s) == len(self.epoch_time_end_s)
-        self.var_values.append(scan_var)
+        assert isinstance(extra, dict)
+        self.var_values.append(float(scan_var))
         self.point_extras.append(extra)
         self.epoch_time_start_s.append(epoch_time_s)
 
@@ -74,12 +78,16 @@ class Scan():
                 states = slice(a, b, None)
                 bin_centers, counts = ds.hist(bin_edges, attr, states=states)
                 hist2d[:, i] += counts
-        return ScanResult(hist2d, var_name, var_unit, var_vals, bin_centers, attr, "eV", self.description_str(), data.shortName)
+        return ScanHist2DResult(hist2d, var_name, var_unit, var_vals, bin_centers, attr, "eV", self.description_str(), data.shortName)
 
+    def to_disk(self, filename):
+        assert not os.path.isfile(filename)
+        with open(filename, "w") as f:
+            f.write(self.to_json())
 
 
 @dataclass
-class ScanResult():
+class ScanHist2DResult():
     hist2d: Any # really np.ndarray
     var_name: str
     var_unit: str
@@ -105,7 +113,7 @@ class ScanResult():
         assert self.attr == other.attr
         assert self.attr_unit == other.attr_unit
         assert self.pulse_file_desc == other.pulse_file_desc
-        return ScanResult(self.hist2d+other.hist2d, self.var_name, self.var_unit, self.var_vals,
+        return ScanHist2DResult(self.hist2d+other.hist2d, self.var_name, self.var_unit, self.var_vals,
         self.bin_centers, self.attr, self.attr_unit, "sum scan", self.pulse_file_desc)
 
 class ScannerState(StateMachine):

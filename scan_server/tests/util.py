@@ -25,10 +25,10 @@ def scan_logs_raw():
 
 def scan_from_log(log: dict):
     scan = Scan(var_name="mono", var_unit="eV", scan_num=log["header"]["pass"], beamtime_id=0, 
-                ext_id=log["header"]["htxs"], sample_id=0, sample_desc=d17[0]["sample"], extra=None)
+                ext_id=log["header"]["htxs"], sample_id=0, sample_desc=d17[0]["sample"], extra={})
     for i, mono_val in enumerate(log["mono"].keys()):
         start, end = log["mono"][mono_val]
-        scan.point_start(mono_val, start, extra=None)
+        scan.point_start(mono_val, start, extra={})
         scan.point_end(end)
     scan.end()
     return scan
