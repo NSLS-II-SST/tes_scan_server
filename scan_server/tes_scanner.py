@@ -6,6 +6,7 @@ from . import routines
 import mass
 from dataclasses import dataclass, field
 import io
+import pylab as plt
 
 
 @dataclass
@@ -58,6 +59,54 @@ class Scan():
     def __repr__(self):
         return f"<Scan num{self.scan_num} beamtime_id{self.beamtime_id} ext_id{self.ext_id} npts{len(self.var_values)}"
 
+    def hist2d(self, data, bin_edges, attr):
+        starts_nano = (1e9*np.array(self.epoch_time_start_s)).astype(int)
+        ends_nano = (1e9*np.array(self.epoch_time_end_s)).astype(int)
+        assert len(starts_nano) == len(ends_nano)
+        var_name = self.var_name
+        var_unit = self.var_unit
+        var_vals = self.var_values
+        hist2d = np.zeros((len(bin_edges)-1, len(starts_nano)))
+        for ds in data.values():
+            ind_starts = np.searchsorted(ds.unixnano, starts_nano)
+            ind_ends = np.searchsorted(ds.unixnano, ends_nano)
+            for i, (a, b) in enumerate(zip(ind_starts, ind_ends)):
+                states = slice(a, b, None)
+                bin_centers, counts = ds.hist(bin_edges, attr, states=states)
+                hist2d[:, i] += counts
+        return ScanResult(hist2d, var_name, var_unit, var_vals, bin_centers, attr, "eV", self.description_str(), data.shortName)
+
+
+
+@dataclass
+class ScanResult():
+    hist2d: Any # really np.ndarray
+    var_name: str
+    var_unit: str
+    var_vals: Any # really np.nda
+    bin_centers: Any # really np.ndarray
+    attr: str
+    attr_unit: str
+    scan_desc: str
+    pulse_file_desc: str
+
+    def plot(self):
+        plt.figure()
+        plt.contourf(self.var_vals, self.bin_centers, self.hist2d, cmap="gist_heat")
+        plt.xlabel(f"{self.var_name} ({self.var_unit})")
+        plt.ylabel(f"{self.attr} ({self.attr_unit})")
+        plt.title(self.scan_desc)
+
+    def __add__(self, other):
+        assert self.var_name == other.var_name
+        assert self.var_unit == other.var_unit
+        assert all([a == b for (a, b) in zip(self.var_vals, other.var_vals)])
+        assert all([a == b for (a, b) in zip(self.bin_centers, other.bin_centers)])
+        assert self.attr == other.attr
+        assert self.attr_unit == other.attr_unit
+        assert self.pulse_file_desc == other.pulse_file_desc
+        return ScanResult(self.hist2d+other.hist2d, self.var_name, self.var_unit, self.var_vals,
+        self.bin_centers, self.attr, self.attr_unit, "sum scan", self.pulse_file_desc)
 
 class ScannerState(StateMachine):
     """defines allowed state transitions, transitions will error if you do an invalid one"""

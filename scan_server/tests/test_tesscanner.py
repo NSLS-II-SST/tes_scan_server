@@ -1,6 +1,7 @@
 from scan_server import TESScanner, Scan, DastardClient
 import pytest
 import statemachine
+import numpy as np
 
 class MockClient(DastardClient):
     def _call(self, method, params):
@@ -60,7 +61,7 @@ def test_tes_scanner():
 def test_scan():
     scan = Scan(var_name="mono", var_unit="eV", scan_num=0, beamtime_id="test_Beamtime", 
                 ext_id=0, sample_id=0, sample_desc="test_desc", extra=None)
-    for i, mono_val in np.arange(1000):
+    for i, mono_val in enumerate(np.arange(1000)):
         start, end = i, i+0.5
         scan.point_start(mono_val, start, extra=None)
         scan.point_end(end)
