@@ -9,7 +9,7 @@ from dataclasses_json import dataclass_json
 import io
 import pylab as plt
 import os
-from numpyencoder import NumpyEncoder
+
 
 @dataclass_json
 @dataclass
@@ -139,9 +139,10 @@ class ScannerState(StateMachine):
 
 class TESScanner():
     """talks to dastard and mass"""
-    def __init__(self, dastard, beamtime_id: str):
+    def __init__(self, dastard, beamtime_id: str, base_log_dir: str):
         self.dastard = dastard
         self.beamtime_id = beamtime_id
+        self.base_log_dir = base_log_dir
         self.state: ScannerState = ScannerState()
         self.reset()
 
