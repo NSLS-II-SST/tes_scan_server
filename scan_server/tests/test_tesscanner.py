@@ -50,7 +50,7 @@ def test_tes_scanner():
     #write the full experiment state file all at once, it is much easier than emulating the data arriving
     scanner.file_start()
     assert client._last_method == "SourceControl.WriteControl"
-    scanner.calibration_data_start(sample_id = 0, sample_name = "test_sample", routine = "ssrl_10_1_mix_cal")
+    scanner.calibration_data_start(sample_id = 0, sample_desc = "test_sample", routine = "ssrl_10_1_mix_cal")
     scanner.calibration_data_end()
     scanner.calibration_learn_from_last_data()
     scanner.scan_start(var_name="mono", var_unit="eV", scan_num=33, beamtime_id="test_scan", 
@@ -70,9 +70,9 @@ def test_tes_scanner():
     scanner.roi_set([(100,150),(500,550), (600,650)])
     scanner.roi_start_counts()
     scanner.roi_get_counts()
-    scanner.calibration_data_start(sample_id = 0, sample_name = "test_sample", routine = "ssrl_10_1_mix_cal")
+    scanner.calibration_data_start(sample_id = 0, sample_desc = "test_sample", routine = "ssrl_10_1_mix_cal")
     scanner.calibration_data_end()
-    scanner.scan_start_calc_last_outputs(drift_correction_plan="before_after_interp")
+    scanner.scan_start_calc_last_outputs()
     result = scanner.data.linefit("OKAlpha", attr="energy", plot=False)
     assert result.params["fwhm"].value < 7
     scanner.file_end()
@@ -89,7 +89,7 @@ def test_tes_scanner():
 def test_scan():
     scan = Scan(var_name="mono", var_unit="eV", scan_num=0, beamtime_id="test_Beamtime", 
                 ext_id=0, sample_id=0, sample_desc="test_desc", extra={}, data_path="no actual data",
-                cal_log = CalibrationLog(1, 1, "", "", "", "", 1), drift_correction_plan = "none")
+                cal_log = CalibrationLog(1, 1, "", 1, "", "", "", 1), drift_correction_plan = "none")
     for i, mono_val in enumerate(np.arange(5)):
         start, end = i, i+0.5
         scan.point_start(mono_val, start, extra={})

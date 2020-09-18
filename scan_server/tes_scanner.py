@@ -21,7 +21,8 @@ class CalibrationLog():
     start_unixnano: int
     end_unixnano: int
     off_filename: str
-    sample_id: str
+    sample_id: int
+    sample_desc: str
     beamtime_id: str
     routine: str
     cal_number: int
@@ -183,16 +184,15 @@ class TESScanner():
         self.off_filename = self.dastard.start_file()
         self.data = ChannelGroup(getOffFileListFromOneFile(self.off_filename))
 
-    def calibration_data_start(self, sample_id: int, sample_name: str, routine: str):
+    def calibration_data_start(self, sample_id: int, sample_desc: str, routine: str):
         self.state.cal_data_start()
         self.dastard.set_pulse_triggers()
         self.dastard.set_experiment_state(f"CAL{self.next_cal_number}")
         self.calibration_to_routine.append(routine)
         self.calibration_log = CalibrationLog(start_unixnano=time_unixnano(),
             end_unixnano=None, off_filename=self.off_filename,
-            sample_id = sample_id, beamtime_id = self.beamtime_id, routine = routine, 
+            sample_id = sample_id, sample_desc = sample_desc, beamtime_id = self.beamtime_id, routine = routine, 
             cal_number = self.next_cal_number)
-        self.calibration_info_stash = {"sample_id": sample_id, "sample_name": sample_name, "routine": routine, "start": time_unixnano()}
         self.next_cal_number += 1
         assert len(self.calibration_to_routine) == self.next_cal_number
 
@@ -261,15 +261,20 @@ class TESScanner():
 
     def scan_end(self):
         self.state.scan_end()
-        # self.scan.end()
-        print(self.scan)
         self.scan.to_disk(self.scan_filename(self.scan.scan_num))
         self.last_scan = self.scan
         self.scan = None
         self.dastard.set_experiment_state("PAUSE")
         
-    def scan_start_calc_last_outputs(self, drift_correction_plan):
-        # self.validate_drift_correction_plan(drift_correction_plan)
+    def scan_start_calc_last_outputs(self):
+        scan_hist2d = self.last_scan.hist2d(self.data, np.arange(0, 1000, 1), "energy")
+        scan_hist2d.plot()
+        scan_num = self.last_scan.scan_num
+        fname = os.path.join(self.scan_dir(scan_num, "plots"), f"rt_{scan_num}.png")
+        plt.savefig(fname)
+        plt.close()
+        print(fname)
+        # TODO.... make this async and make it do higher quality analysis
         # self.launch_process_to_calc_outputs(drift_correction_plan)
         return
 
