@@ -9,6 +9,15 @@ from dataclasses_json import dataclass_json
 import io
 import pylab as plt
 import os
+from pathlib import Path
+
+
+@dataclass_json
+@dataclass
+class CalDriftPlan():
+    last_cal_number: int
+    cal_routine: str
+    drift_plan: str
 
 
 @dataclass_json
@@ -22,6 +31,8 @@ class Scan():
     sample_id: int
     sample_desc: str
     extra: dict
+    data_path: str
+    cal_drift_plan: CalDriftPlan
     point_extras: List[dict] = field(default_factory=list)
     var_values: List[float] = field(default_factory=list)
     epoch_time_start_s: List[int] = field(default_factory=list)
@@ -206,9 +217,17 @@ class TESScanner():
         # bin_centers, counts = self.data.hist("realtime_energy", self.rois_bin_edges)
         # return counts[::2]
 
-    def scan_define(self, var_name, var_unit, scan_num, beamtime_id, ext_id, sample_id, sample_desc, extra):
+    def scan_start(self, var_name, var_unit, scan_num, beamtime_id, ext_id, sample_id, sample_desc, extra, drift_plan):
+        assert isinstance(scan_num, int)
+        assert not os.path.isfile(self.scan_filename(scan_num))
         self.state.scan_start()
-        self.scan = Scan(var_name, var_unit, scan_num, beamtime_id, ext_id, sample_id, sample_desc, extra)
+        data_path = self.dastard.get_data_path()
+        self.validate_drift_plan(drift_plan)
+        self.scan = Scan(var_name, var_unit, scan_num, beamtime_id, ext_id, sample_id, 
+            sample_desc, extra, data_path,
+            cal_drift_plan=CalDriftPlan(last_cal_number = self.next_cal_number - 1, 
+                                        cal_routine = self.calibration_to_routine[self.next_cal_number - 1],
+                                        drift_plan = drift_plan))
 
     def scan_point_start(self, scan_var, extra):
         self.state.scan_point_start()
@@ -225,6 +244,7 @@ class TESScanner():
     def scan_end(self):
         self.state.scan_end()
         # self.scan.end()
+        self.scan.to_disk(self.scan_filename(self.scan.scan_num))
         self.last_scan = self.scan
         self.scan = None
         
@@ -237,6 +257,21 @@ class TESScanner():
         self.state.file_end()
         self.reset()
     
+    def scan_dir(self, scan_num, subdir = None):
+        dirname = os.path.join(self.base_log_dir, self.beamtime_id, f"scan{scan_num}")
+        if subdir is not None:
+            dirname = os.path.join(dirname, subdir)
+        Path(dirname).mkdir(parents=True, exist_ok=True)
+        return dirname        
+
+    def scan_filename(self, scan_num):
+        filename = os.path.join(self.scan_dir(scan_num), f"log.json")
+        assert not os.path.isfile(filename)
+        return filename
+
+    def validate_drift_plan(self, drift_plan):
+        if drift_plan not in ["testing_not_real"]:
+            raise Exception("invalid drift plan")
 
 
 

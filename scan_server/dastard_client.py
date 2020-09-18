@@ -92,4 +92,6 @@ class DastardClient():
     def set_pulse_triggers(self):
         self._call("", self.pulse_trigger_params)
 
+    def get_data_path(self):
+        return "PLACEHOLDER DATA PATH"
 

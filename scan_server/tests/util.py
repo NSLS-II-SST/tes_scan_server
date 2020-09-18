@@ -1,7 +1,7 @@
 import os
 import yaml
 import numpy as np
-from scan_server import  Scan
+from scan_server import Scan, CalDriftPlan
 
 
 try:
@@ -24,8 +24,10 @@ def scan_logs_raw():
     return d16, d17, d18, d30
 
 def scan_from_log(log: dict):
+    "make Scan objects from .yaml logs from Jamie's software"
     scan = Scan(var_name="mono", var_unit="eV", scan_num=log["header"]["pass"], beamtime_id=0, 
-                ext_id=log["header"]["htxs"], sample_id=0, sample_desc=d17[0]["sample"], extra={})
+                ext_id=log["header"]["htxs"], sample_id=0, sample_desc=d17[0]["sample"], extra={},
+                data_path="no actual data", cal_drift_plan=CalDriftPlan(-1, "test", "test"))
     for i, mono_val in enumerate(log["mono"].keys()):
         start, end = log["mono"][mono_val]
         scan.point_start(mono_val, start, extra={})

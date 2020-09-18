@@ -1,4 +1,4 @@
-from scan_server import TESScanner, Scan, DastardClient
+from scan_server import TESScanner, Scan, DastardClient, CalDriftPlan
 import pytest
 import statemachine
 import numpy as np
@@ -37,8 +37,9 @@ def test_tes_scanner():
     scanner.calibration_data_start(sample_id = 0, sample_name = "test_sample", routine = "ssrl_10_1_mix_cal")
     scanner.calibration_data_end()
     scanner.calibration_learn_from_last_data()
-    scanner.scan_define(var_name="mono", var_unit="eV", scan_num=0, beamtime_id="test_scan", 
-                ext_id=0, sample_id=0, sample_desc="test_desc", extra = {"tempK":43.2})
+    scanner.scan_start(var_name="mono", var_unit="eV", scan_num=0, beamtime_id="test_scan", 
+                ext_id=0, sample_id=0, sample_desc="test_desc", extra = {"tempK":43.2}, 
+                drift_plan = "testing_not_real")
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
         scanner.file_start() # start file while file started not allowed
     scanner.scan_point_start(122, extra={})
@@ -63,7 +64,8 @@ def test_tes_scanner():
 
 def test_scan():
     scan = Scan(var_name="mono", var_unit="eV", scan_num=0, beamtime_id="test_Beamtime", 
-                ext_id=0, sample_id=0, sample_desc="test_desc", extra=None)
+                ext_id=0, sample_id=0, sample_desc="test_desc", extra={}, data_path="no actual data",
+                cal_drift_plan=CalDriftPlan(-1, "test", "test"))
     for i, mono_val in enumerate(np.arange(5)):
         start, end = i, i+0.5
         scan.point_start(mono_val, start, extra={})
