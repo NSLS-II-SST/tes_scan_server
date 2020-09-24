@@ -4,12 +4,11 @@ The beamline talks to ScanServer, ScanServer talks to Dastard and mass. Dastard 
 
 ## Important directory/file locations
 
-  * `base_log_dir/beamtime_id/scan00000/log.json`
-    * human/computer readable log
-    * also copied into the .off directory [todo?]
-  * `base_log_dir/beamtime_id/scan00000/plots`
-    * realtime plots [todo]
-  * `base_log_dir/beamtime_id/scan00000/data`
-    * computer readable data [todo]
-  * cals in the .off directory
+  * `base_user_output_dir/beamtime_id/logs/scan00000.json`
+  * `base_user_output_dir/beamtime_id/logs/calibration0000.json`
+  * `base_user_output_dir/beamtime_id/scan0000/plots` 
+  * `base_user_output_dir/beamtime_id/scan0000/data` 
+  * `off_dir/logs/scan0000/scan00000.json`
+  * `off_dir/logs/scan0000/calibration0000.json`
 
+ 

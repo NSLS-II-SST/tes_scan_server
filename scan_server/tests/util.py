@@ -2,6 +2,7 @@ import os
 import yaml
 import numpy as np
 from scan_server import Scan, CalibrationLog
+import shutil
 
 
 try:
@@ -26,9 +27,9 @@ def scan_logs_raw():
 
 def scan_from_log(log: dict):
     "make Scan objects from .yaml logs from Jamie's software"
-    scan = Scan(var_name="mono", var_unit="eV", scan_num=log["header"]["pass"], beamtime_id=0, 
-                ext_id=log["header"]["htxs"], sample_id=0, sample_desc=d17[0]["sample"], extra={},
-                data_path="no actual data", cal_log = None, drift_correction_plan = None)
+    scan = Scan(var_name="mono", var_unit="eV", scan_num=log["header"]["htxs"], beamtime_id="test",
+                sample_id=0, sample_desc=d17[0]["sample"], extra={},
+                data_path="no actual data", previous_cal_log = None, drift_correction_plan = None)
     for i, mono_val in enumerate(log["mono"].keys()):
         start, end = log["mono"][mono_val]
         scan.point_start(mono_val, start, extra={})
@@ -77,15 +78,17 @@ def write_ssrl_experiment_state_file(filename):
 
 import os, errno
 
-def silentremove(filename):
+def silentremovedir(dirname):
     try:
-        os.remove(filename)
-    except OSError as e: # this would be "except OSError, e:" before Python 2.6
-        if e.errno != errno.ENOENT: # errno.ENOENT = no such file or directory
-            raise # re-raise exception if a different error occurred
+        shutil.rmtree(dirname)
+    except FileNotFoundError:
+        pass
 
 def pre_test_cleanup():
     # delete files previous tests create
-    silentremove(os.path.join(ssrl_dir, "20200219_CAL0.json"))
-    silentremove(os.path.join(ssrl_dir, "20200219_CAL1.json"))
+    silentremovedir(os.path.join(ssrl_dir, "logs"))
+    silentremovedir(os.path.join(ssrl_dir, "base_user_output_dir"))
+
+
+
 pre_test_cleanup()

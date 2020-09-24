@@ -30,7 +30,7 @@ class CalibrationLog():
     def to_disk(self, filename):
         assert not os.path.isfile(filename)
         with open(filename, "w") as f:
-            f.write(self.to_json())
+            f.write(self.to_json(indent=2))
 
 @dataclass_json
 @dataclass
@@ -39,12 +39,11 @@ class Scan():
     var_unit: str
     scan_num: int
     beamtime_id: str
-    ext_id: str
     sample_id: int
     sample_desc: str
     extra: dict
     data_path: str
-    cal_log: CalibrationLog
+    previous_cal_log: CalibrationLog
     drift_correction_plan: str
     point_extras: List[dict] = field(default_factory=list)
     var_values: List[float] = field(default_factory=list)
@@ -105,7 +104,7 @@ class Scan():
     def to_disk(self, filename):
         assert not os.path.isfile(filename)
         with open(filename, "w") as f:
-            f.write(self.to_json())
+            f.write(self.to_json(indent=2))
 
 
 @dataclass
@@ -161,10 +160,10 @@ class ScannerState(StateMachine):
 
 class TESScanner():
     """talks to dastard and mass"""
-    def __init__(self, dastard, beamtime_id: str, base_log_dir: str):
+    def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str):
         self.dastard = dastard
         self.beamtime_id = beamtime_id
-        self.base_log_dir = base_log_dir
+        self.base_user_output_dir = base_user_output_dir
         self.state: ScannerState = ScannerState()
         self.reset()
 
@@ -200,7 +199,8 @@ class TESScanner():
         self.state.cal_data_end()
         self.dastard.set_experiment_state("PAUSE")
         self.calibration_log.end_unixnano = time_unixnano()
-        self.calibration_log.to_disk(self.cal_filename(self.calibration_log.cal_number))
+        for fname in self.log_filenames("calibration", self.calibration_log.cal_number):
+            self.calibration_log.to_disk(fname)
 
     def calibration_learn_from_last_data(self):
         self._calibration_apply_routine(self.calibration_log.routine, 
@@ -237,15 +237,16 @@ class TESScanner():
         bin_centers, counts = self.data.histWithUnixnanos(self.rois_bin_edges, "energy", [a], [b])
         return counts[::2]
 
-    def scan_start(self, var_name, var_unit, scan_num, beamtime_id, ext_id, sample_id, sample_desc, extra, drift_correction_plan):
+    def scan_start(self, var_name, var_unit, scan_num, sample_id, sample_desc, extra, drift_correction_plan):
         assert isinstance(scan_num, int)
-        assert not os.path.isfile(self.scan_filename(scan_num))
+        for fname in self.log_filenames("scan", scan_num):
+            assert not os.path.isfile(fname)
         self.state.scan_start()
         data_path = self.dastard.get_data_path()
         self.validate_drift_correction_plan(drift_correction_plan)
-        self.scan = Scan(var_name, var_unit, scan_num, beamtime_id, ext_id, sample_id, 
+        self.scan = Scan(var_name, var_unit, scan_num, self.beamtime_id, sample_id, 
             sample_desc, extra, data_path,
-            cal_log=self.calibration_log,
+            previous_cal_log=self.calibration_log,
             drift_correction_plan=drift_correction_plan)
         self.dastard.set_experiment_state(f"SCAN{scan_num}")
 
@@ -261,7 +262,9 @@ class TESScanner():
 
     def scan_end(self):
         self.state.scan_end()
-        self.scan.to_disk(self.scan_filename(self.scan.scan_num))
+        self.scan.end()
+        for fname in self.log_filenames("scan", self.scan.scan_num):
+            self.scan.to_disk(fname)
         self.last_scan = self.scan
         self.scan = None
         self.dastard.set_experiment_state("PAUSE")
@@ -270,7 +273,7 @@ class TESScanner():
         scan_hist2d = self.last_scan.hist2d(self.data, np.arange(0, 1000, 1), "energy")
         scan_hist2d.plot()
         scan_num = self.last_scan.scan_num
-        fname = os.path.join(self.scan_dir(scan_num, "plots"), f"rt_{scan_num}.png")
+        fname = os.path.join(self.scan_user_output_dir(scan_num, "plots"), f"rt_{scan_num}.png")
         plt.savefig(fname)
         plt.close()
         print(fname)
@@ -282,25 +285,38 @@ class TESScanner():
         self.state.file_end()
         self.reset()
     
-    def scan_dir(self, scan_num, subdir = None):
-        dirname = os.path.join(self.base_log_dir, self.beamtime_id, f"scan{scan_num}")
+    def beamtime_user_output_dir(self, subdir = None):
+        dirname = os.path.join(self.base_user_output_dir, f"beamtime_{self.beamtime_id}")
         if subdir is not None:
             dirname = os.path.join(dirname, subdir)
         Path(dirname).mkdir(parents=True, exist_ok=True)
-        return dirname        
+        return dirname
 
-    def scan_filename(self, scan_num):
-        filename = os.path.join(self.scan_dir(scan_num), f"log.json")
-        assert not os.path.isfile(filename)
-        return filename
-
-    def cal_filename(self, cal_number):
-        dirname = os.path.join(self.base_log_dir, self.beamtime_id, "calibration_logs")
+    def scan_user_output_dir(self, scan_num, subdir = None):
+        dirname = self.beamtime_user_output_dir(f"scan{scan_num:4d}")
+        if subdir is not None:
+            dirname = os.path.join(dirname, subdir)
         Path(dirname).mkdir(parents=True, exist_ok=True)
-        basename, channum = mass.ljh_util.ljh_basename_channum(self.off_filename)
-        filename = os.path.join(dirname, f"{basename}_CAL{cal_number}.json")
-        return filename
+        return dirname
+        
+    def user_log_dir(self):
+        return self.beamtime_user_output_dir("logs")
 
+    def tes_log_dir(self):
+        dirname = os.path.join(os.path.dirname(self.off_filename),"logs")
+        Path(dirname).mkdir(parents=True, exist_ok=True)
+        return dirname
+
+    def log_filenames(self, log_name, log_num):
+        # we duplicate logs
+        # one set goes to the beamtime directory for user consumption
+        # another set lives with the off files for convenience
+        assert log_name in ["scan", "calibration"]
+        filename1 = os.path.join(self.user_log_dir(), f"{log_name}{log_num:04d}.json")
+        filename2 = os.path.join(self.tes_log_dir(), f"{log_name}{log_num:04d}.json")
+        assert not os.path.isfile(filename1), f"{filename1} already exists"
+        assert not os.path.isfile(filename2), f"{filename2} already exists"
+        return [filename1, filename2]        
 
     def validate_drift_correction_plan(self, drift_correction_plan):
         if drift_correction_plan not in ["testing_not_real"]:

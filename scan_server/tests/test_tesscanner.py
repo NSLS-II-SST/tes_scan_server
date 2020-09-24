@@ -5,10 +5,12 @@ import numpy as np
 import tempfile
 import os
 from . import util
+from pathlib import Path
+
 
 
 class MockClient(DastardClient):
-    expected_states = ["CAL0", "PAUSE", "SCAN33", "PAUSE", "CAL1", "PAUSE"]
+    expected_states = ["CAL0", "PAUSE", "SCAN33", "PAUSE", "SCAN34", "PAUSE", "CAL1", "PAUSE"]
 
     def _call(self, method, params):
         self._last_method = method
@@ -41,10 +43,11 @@ class MockListener():
         return self.contents
 
 def test_tes_scanner():
-    base_log_dir = tempfile.TemporaryDirectory().name 
+    base_user_output_dir = os.path.join(util.ssrl_dir, "base_user_output_dir")
+    Path(base_user_output_dir).mkdir(parents=False, exist_ok=True)
     listener = MockListener()
     client = MockClient(("test_url", "test_port"), listener, pulse_trigger_params = None, noise_trigger_params = None)
-    scanner = TESScanner(dastard = client, beamtime_id ="test", base_log_dir=base_log_dir)
+    scanner = TESScanner(dastard = client, beamtime_id ="test", base_user_output_dir=base_user_output_dir)
     listener.set_next(topic="WRITING", contents ={"Active":True, "FilenamePattern": util.ssrl_filename_pattern})
     util.write_ssrl_experiment_state_file(util.ssrl_filename_pattern%("experiment_state","txt"))
     #write the full experiment state file all at once, it is much easier than emulating the data arriving
@@ -53,8 +56,8 @@ def test_tes_scanner():
     scanner.calibration_data_start(sample_id = 0, sample_desc = "test_sample", routine = "ssrl_10_1_mix_cal")
     scanner.calibration_data_end()
     scanner.calibration_learn_from_last_data()
-    scanner.scan_start(var_name="mono", var_unit="eV", scan_num=33, beamtime_id="test_scan", 
-                ext_id=0, sample_id=0, sample_desc="test_desc", extra = {"tempK":43.2}, 
+    scanner.scan_start(var_name="mono", var_unit="eV", scan_num=33,  
+                sample_id=0, sample_desc="test_desc", extra = {"tempK":43.2}, 
                 drift_correction_plan = "testing_not_real")
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
         scanner.file_start() # start file while file started not allowed
@@ -65,6 +68,18 @@ def test_tes_scanner():
     scanner.scan_point_start(123, extra={})
     scanner.scan_point_end()
     scanner.scan_end()
+    scanner.scan_start(var_name="mono", var_unit="eV", scan_num=34, 
+                sample_id=0, sample_desc="test_desc", extra = {"another_var":"some text"}, 
+                drift_correction_plan = "testing_not_real")
+    scan_to_copy = util.scans()[0]
+    for var_value in scan_to_copy.var_values:
+        scanner.scan_point_start(var_value, extra={})
+        scanner.scan_point_end()
+    scanner.scan_end()
+    # reach into internals to make the times correct, dont do this in real usage
+    scanner.last_scan.epoch_time_end_s = scan_to_copy.epoch_time_end_s
+    scanner.last_scan.epoch_time_start_s = scan_to_copy.epoch_time_start_s
+    # done reaching into internals
     with pytest.raises(AssertionError):
         scanner.roi_set([(100,150),(5,550)]) # 2nd bin starts below first bin
     scanner.roi_set([(100,150),(500,550), (600,650)])
@@ -79,17 +94,22 @@ def test_tes_scanner():
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
         scanner.file_end() # end file while file ended not allowed
  
-    with open(os.path.join(util.ssrl_dir, "20200219_CAL0.json"), "r") as f:
+    with open(os.path.join(util.ssrl_dir, "logs", "calibration0000.json"), "r") as f:
         cal0 = CalibrationLog.from_json(f.read())
-    with open(os.path.join(util.ssrl_dir, "20200219_CAL1.json"), "r") as f:
+    with open(os.path.join(util.ssrl_dir, "logs", "calibration0001.json"), "r") as f:
         cal1 = CalibrationLog.from_json(f.read())
     assert cal1 != cal0
+
+    with open(os.path.join(base_user_output_dir, "beamtime_test", "logs", "scan0033.json"), "r") as f:
+        scan = Scan.from_json(f.read())
+    assert scan._ended
+    assert scan.previous_cal_log == cal0
 
 
 def test_scan():
     scan = Scan(var_name="mono", var_unit="eV", scan_num=0, beamtime_id="test_Beamtime", 
-                ext_id=0, sample_id=0, sample_desc="test_desc", extra={}, data_path="no actual data",
-                cal_log = CalibrationLog(1, 1, "", 1, "", "", "", 1), drift_correction_plan = "none")
+                sample_id=0, sample_desc="test_desc", extra={}, data_path="no actual data",
+                previous_cal_log = CalibrationLog(1, 1, "", 1, "", "", "", 1), drift_correction_plan = "none")
     for i, mono_val in enumerate(np.arange(5)):
         start, end = i, i+0.5
         scan.point_start(mono_val, start, extra={})
