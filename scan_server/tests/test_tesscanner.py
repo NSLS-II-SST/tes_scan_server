@@ -88,7 +88,7 @@ def test_tes_scanner():
     scanner.calibration_data_start(sample_id = 0, sample_desc = "test_sample", routine = "ssrl_10_1_mix_cal")
     scanner.calibration_data_end()
     scanner.scan_start_calc_last_outputs()
-    result = scanner.data.linefit("OKAlpha", attr="energy", plot=False)
+    result = scanner._get_data().linefit("OKAlpha", attr="energy", plot=False)
     assert result.params["fwhm"].value < 7
     scanner.file_end()
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):

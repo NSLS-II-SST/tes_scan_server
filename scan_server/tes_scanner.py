@@ -140,22 +140,22 @@ class ScanHist2DResult():
 class ScannerState(StateMachine):
     """defines allowed state transitions, transitions will error if you do an invalid one"""
     no_file = State('no_file', initial=True)
-    pause = State("pause")
+    file_open = State("file_open")
     scan = State('scan')
     scan_point = State("scan_point")
     cal_data = State('cal_data')
 
-    scan_start = pause.to(scan)
-    scan_end = scan.to(pause)
+    scan_start = file_open.to(scan)
+    scan_end = scan.to(file_open)
 
     scan_point_start = scan.to(scan_point)
     scan_point_end = scan_point.to(scan)
 
-    file_start = no_file.to(pause)
-    file_end = pause.to(no_file)
+    file_start = no_file.to(file_open)
+    file_end = file_open.to(no_file)
 
-    cal_data_start = pause.to(cal_data)
-    cal_data_end = cal_data.to(pause)
+    cal_data_start = file_open.to(cal_data)
+    cal_data_end = cal_data.to(file_open)
 
 
 class TESScanner():
@@ -165,12 +165,12 @@ class TESScanner():
         self.beamtime_id = beamtime_id
         self.base_user_output_dir = base_user_output_dir
         self.state: ScannerState = ScannerState()
-        self.reset()
+        self._reset()
 
-    def reset(self):
+    def _reset(self):
         self.last_scan = None
         self.scan = None
-        self.data = None
+        self._data = None
         self.roi_counts_start_unixnano = None
         self.rois_bin_edges = None
         self.calibration_to_routine: List[str] = [] 
@@ -179,11 +179,26 @@ class TESScanner():
         self.off_filename = None
 
     def file_start(self):
+        """tell dastard to start a new file, must be called before any calibration or scan functions"""
         self.state.file_start()
         self.off_filename = self.dastard.start_file()
-        self.data = ChannelGroup(getOffFileListFromOneFile(self.off_filename))
+        # dastard lazily creates off files when it has data to write
+        # so we need to wait to open the off files until some time has
+        # passed from calling file_start
+        # so we must always access through _get_data (_hides it from the rpc)
+    
+    def _get_data(self):
+        assert self.off_filename is not None, "self.off_filename is None"
+        if self._data is None:
+            self._data = ChannelGroup(getOffFileListFromOneFile(self.off_filename))
+        return self._data
 
     def calibration_data_start(self, sample_id: int, sample_desc: str, routine: str):
+        """start taking calibraion data, ensure the appropriate x-rays are incident on the detector
+        sample_id: int - for your reference
+        sample_desc: str - for your reference
+        routine: str - which function is used to generate calibration curves from the data
+        """
         self.state.cal_data_start()
         self.dastard.set_pulse_triggers()
         self.dastard.set_experiment_state(f"CAL{self.next_cal_number}")
@@ -196,15 +211,17 @@ class TESScanner():
         assert len(self.calibration_to_routine) == self.next_cal_number
 
     def calibration_data_end(self):
+        """stop taking calabration data, will write a log file"""
         self.state.cal_data_end()
         self.dastard.set_experiment_state("PAUSE")
         self.calibration_log.end_unixnano = time_unixnano()
-        for fname in self.log_filenames("calibration", self.calibration_log.cal_number):
+        for fname in self._log_filenames("calibration", self.calibration_log.cal_number):
             self.calibration_log.to_disk(fname)
 
     def calibration_learn_from_last_data(self):
+        """use the last calibration data plus the specified routine to learn the realtime energy calibration curves"""
         self._calibration_apply_routine(self.calibration_log.routine, 
-            self.calibration_log.cal_number, self.data)
+            self.calibration_log.cal_number, self._get_data())
         # now we can access energy
 
     def _calibration_apply_routine(self, routine, cal_number, data):
@@ -213,7 +230,9 @@ class TESScanner():
         data.refreshFromFiles()
         return routine(cal_number, data)
 
-    def roi_set(self, rois_list):
+    def roi_set(self, rois_list: List):
+        """must be alled before other roi functions
+        rois_list: a list of (lo, hi) energy pairs in eV, each pair specifies a region of interest""" 
         # roi list is a a list of pairs of lo, hi energy pairs
         assert len(rois_list) > 0
         bin_edges = []
@@ -226,31 +245,33 @@ class TESScanner():
         self.rois_bin_edges = np.array(bin_edges)
     
     def roi_start_counts(self):
+        """take a timestamp for future reference"""
         self.roi_counts_start_unixnano = time_unixnano()
     
     def roi_get_counts(self):
-        "first call set_rois, then start_rois_counts, then this will return counts in all rois since last call to start_rois_counts"
+        """return a list of counts in each ROI since roi_start_counts was called
+        must always call roi_start_counts and roi_get_counts in pairs"""
         assert self.roi_counts_start_unixnano is not None, "first call set_rois, then start_rois_counts, roi_start_counts, then roi_get_counts"
         assert self.rois_bin_edges is not None, "rois_bin_edges is None: first call set_rois, then start_rois_counts, roi_start_counts, then roi_get_counts"
         a, b = self.roi_counts_start_unixnano, time_unixnano()
         self.roi_counts_start_unixnano = None
-        bin_centers, counts = self.data.histWithUnixnanos(self.rois_bin_edges, "energy", [a], [b])
+        bin_centers, counts = self._get_data().histWithUnixnanos(self.rois_bin_edges, "energy", [a], [b])
         return counts[::2]
 
-    def scan_start(self, var_name, var_unit, scan_num, sample_id, sample_desc, extra, drift_correction_plan):
+    def scan_start(self, var_name: str, var_unit: str, scan_num: int, sample_id: int, sample_desc: str, extra: dict, drift_correction_plan: str):
         assert isinstance(scan_num, int)
-        for fname in self.log_filenames("scan", scan_num):
+        for fname in self._log_filenames("scan", scan_num):
             assert not os.path.isfile(fname)
         self.state.scan_start()
         data_path = self.dastard.get_data_path()
-        self.validate_drift_correction_plan(drift_correction_plan)
+        self._validate_drift_correction_plan(drift_correction_plan)
         self.scan = Scan(var_name, var_unit, scan_num, self.beamtime_id, sample_id, 
             sample_desc, extra, data_path,
             previous_cal_log=self.calibration_log,
             drift_correction_plan=drift_correction_plan)
         self.dastard.set_experiment_state(f"SCAN{scan_num}")
 
-    def scan_point_start(self, scan_var, extra):
+    def scan_point_start(self, scan_var: float, extra: dict):
         self.state.scan_point_start()
         epoch_time_s = time.time()
         self.scan.point_start(scan_var, epoch_time_s, extra)
@@ -263,17 +284,17 @@ class TESScanner():
     def scan_end(self):
         self.state.scan_end()
         self.scan.end()
-        for fname in self.log_filenames("scan", self.scan.scan_num):
+        for fname in self._log_filenames("scan", self.scan.scan_num):
             self.scan.to_disk(fname)
         self.last_scan = self.scan
         self.scan = None
         self.dastard.set_experiment_state("PAUSE")
         
     def scan_start_calc_last_outputs(self):
-        scan_hist2d = self.last_scan.hist2d(self.data, np.arange(0, 1000, 1), "energy")
+        scan_hist2d = self.last_scan.hist2d(self._get_data(), np.arange(0, 1000, 1), "energy")
         scan_hist2d.plot()
         scan_num = self.last_scan.scan_num
-        fname = os.path.join(self.scan_user_output_dir(scan_num, "plots"), f"rt_{scan_num}.png")
+        fname = os.path.join(self._scan_user_output_dir(scan_num, "plots"), f"rt_{scan_num}.png")
         plt.savefig(fname)
         plt.close()
         print(fname)
@@ -283,42 +304,42 @@ class TESScanner():
 
     def file_end(self):
         self.state.file_end()
-        self.reset()
+        self._reset()
     
-    def beamtime_user_output_dir(self, subdir = None):
+    def _beamtime_user_output_dir(self, subdir = None):
         dirname = os.path.join(self.base_user_output_dir, f"beamtime_{self.beamtime_id}")
         if subdir is not None:
             dirname = os.path.join(dirname, subdir)
         Path(dirname).mkdir(parents=True, exist_ok=True)
         return dirname
 
-    def scan_user_output_dir(self, scan_num, subdir = None):
-        dirname = self.beamtime_user_output_dir(f"scan{scan_num:4d}")
+    def _scan_user_output_dir(self, scan_num, subdir = None):
+        dirname = self._beamtime_user_output_dir(f"scan{scan_num:4d}")
         if subdir is not None:
             dirname = os.path.join(dirname, subdir)
         Path(dirname).mkdir(parents=True, exist_ok=True)
         return dirname
         
-    def user_log_dir(self):
-        return self.beamtime_user_output_dir("logs")
+    def _user_log_dir(self):
+        return self._beamtime_user_output_dir("logs")
 
-    def tes_log_dir(self):
+    def _tes_log_dir(self):
         dirname = os.path.join(os.path.dirname(self.off_filename),"logs")
         Path(dirname).mkdir(parents=True, exist_ok=True)
         return dirname
 
-    def log_filenames(self, log_name, log_num):
+    def _log_filenames(self, log_name, log_num):
         # we duplicate logs
         # one set goes to the beamtime directory for user consumption
         # another set lives with the off files for convenience
         assert log_name in ["scan", "calibration"]
-        filename1 = os.path.join(self.user_log_dir(), f"{log_name}{log_num:04d}.json")
-        filename2 = os.path.join(self.tes_log_dir(), f"{log_name}{log_num:04d}.json")
+        filename1 = os.path.join(self._user_log_dir(), f"{log_name}{log_num:04d}.json")
+        filename2 = os.path.join(self._tes_log_dir(), f"{log_name}{log_num:04d}.json")
         assert not os.path.isfile(filename1), f"{filename1} already exists"
         assert not os.path.isfile(filename2), f"{filename2} already exists"
         return [filename1, filename2]        
 
-    def validate_drift_correction_plan(self, drift_correction_plan):
+    def _validate_drift_correction_plan(self, drift_correction_plan):
         if drift_correction_plan not in ["testing_not_real"]:
             raise Exception("invalid drift plan")
 

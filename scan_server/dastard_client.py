@@ -2,7 +2,7 @@ import json
 import itertools
 import zmq
 import socket
-
+import collections
 
 class DastardListener():
     def __init__(self, host, port):
@@ -22,11 +22,11 @@ class DastardListener():
 
         msg = self.socket.recv_multipart()
         try:
-            topic, contents = msg
+            topic, contents_str = msg
         except TypeError:
             raise Exception(f"msg: `{msg}` should have two parts, but does not")
         topic = topic.decode()
-        contents = contents.decode()
+        contents = json.loads(contents_str.decode())
         self.messages_seen[topic] += 1
         return topic, contents
     
@@ -35,12 +35,17 @@ class DastardListener():
             if self.get_message is None:
                 break
 
-    def get_message_with_topic(self, target_topic):
+    def get_message_with_topic(self, target_topic: str) -> dict:
         while True:
             topic, contents = self.get_message()
             if topic == target_topic:
+                if not isinstance(contents, dict):
+                    raise DastardError(f"contents should be a dict, is a {type(contents)}. contents={contents}")
                 return contents
 
+
+class DastardError(Exception):
+    pass
 
 class DastardClient():
     def __init__(self, addr_port, listener, pulse_trigger_params, noise_trigger_params):
@@ -48,10 +53,15 @@ class DastardClient():
         self.listener = listener
         self.pulse_trigger_params = pulse_trigger_params
         self.noise_trigger_params = noise_trigger_params
+        self._id_iter = itertools.count()
         self._connect()
 
     def _connect(self):
-        self._socket = socket.create_connection(self.addr_port)
+        try:
+            self._socket = socket.create_connection(self.addr_port)
+        except socket.error as ex:
+            host, port = self.addr_port
+            raise Exception(f"Could not connect to Dastard at {host}:{port}")
 
     def _message(self, method_name, params):
         if not isinstance(params, list):
@@ -63,22 +73,28 @@ class DastardClient():
 
     def _call(self, method_name: str, params):
         msg = self._message(method_name, params)
-        self._socket.sendall(json.dumps(msg))
+        print(f"Dastard Client: sending: {msg}")
+        self._socket.sendall(json.dumps(msg).encode())
         response = self._socket.recv(4096)
         response = json.loads(response.decode())
-        assert response["id"] == msg["id"]
-        assert "error" not in response.keys()
+        print(f"Dastard Client: response: {response}")
+        if not response["id"] == msg["id"]:
+            raise DastardError(f"response id does not match message id")
+        err = response.get("error", None)
+        if err is not None:
+            raise DastardError(f"""Dastard responded with error: {err}""") 
         return response["result"]
 
     def start_file(self):
         params = {"Request": "Start",
-        "WriteLJH22": False,
+        "WriteLJH22": True,
         "WriteLJH3": False,
-        "WriteOFF": True,
+        "WriteOFF": False,
         }
         response = self._call("SourceControl.WriteControl", params)
         contents = self.listener.get_message_with_topic("WRITING")
-        assert contents["Active"]
+        if not contents["Active"]:
+            raise DastardError(f"Response from Dastard RPC should have contents[\"Active\"]=True, but it does not\nconents:\n{contents}")
         off_filename = contents["FilenamePattern"]%("chan1","off")
         return off_filename
 

@@ -24,7 +24,7 @@ setup(
     # package_data={'': ['*.png']},
     entry_points={
         'console_scripts': [
-            'scan_server = scan_server.json_rpc_server:start',
+            'ssrl_10_1_server = scan_server.ssrl_server:start',
         ],
     }
 )

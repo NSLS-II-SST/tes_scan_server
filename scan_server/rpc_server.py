@@ -6,15 +6,20 @@ import time
 import os
 import socket
 import json
+from inspect import signature
+import collections
+import textwrap
+import shutil
 
 
 
-DISPATCH = {}
 
-DISPATCH["add"] = lambda a,b: a+b
-DISPATCH["echo"] = lambda s: s
+def time_human(t=None):
+    if t is None:
+        t = time.localtime(time.time())
+    return time.strftime("%Y%m%d_%H:%M:%S", t)
 
-def call_method_from_data(data, dispatch):
+def call_method_from_data(data, dispatch, no_traceback_error_types):
     try:
         d = json.loads(data)
     except Exception as e:
@@ -36,27 +41,60 @@ def call_method_from_data(data, dispatch):
         result = method(*args)
         return _id, method_name, args, result, None
     except Exception as e:
+        if isinstance(e, KeyboardInterrupt):
+            raise e
+        if not any(isinstance(e, et) for et in no_traceback_error_types):
+            import traceback
+            import sys
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            s = traceback.format_exception(exc_type, exc_value, exc_traceback)
+            print("TRACEBACK")
+            print("".join(s))
+            print("TRACEBACK DONE")
         return _id, method_name, args, None, f"Calling Exception: method={method_name}: {e}"
 
-def make_simple_response(_id, result, error):
-    if result is None:
+def make_simple_response(_id, method_name, args, result, error):
+    if error is not None:
         response = f"Error: {error}"
     else:
-        resposne = f"{result}"
+        response = f"{result}"
     return response
 
-def handle_one_message(socket, dispatch, verbose):
-    data = socket.recv(2**12)
+def get_message(sock):
+    try:
+        return sock.recv(2**12)
+    except ConnectionResetError:
+        return None
+
+def handle_one_message(sock, data, dispatch, verbose, no_traceback_error_types):
+    # following https://gist.github.com/limingzju/6483619
+    t_s = time.time()
+    t_struct = time.localtime(t_s)
+    t_human = time_human(t_struct)
     if verbose:
+        print(f"{t_human}")
         print(f"got: {data}")
-    _id, method_name, args, result, error = call_method_from_data(data, dispatch)
+    _id, method_name, args, result, error = call_method_from_data(data, dispatch, no_traceback_error_types)
+    # if verbose:
+    #     print(f"id: {_id}, method_name: {method_name}, args: {args}, result: {result}, error: {error}")
+    response = make_simple_response(_id, method_name, args, result, error).encode()
     if verbose:
-        print(f"id: {_id}, method_name: {method_name}, args: {args}, result: {result}, error: {error}")
-    response = make_simple_response(_id, method_name, args, result, error)
-    socket.sendall(response.encode())
+        print(f"responded: {response}")
+    try:
+        n = sock.send(response)
+        assert n == len(response), f"only {n} of {len(response)} bytes were sent"
+    except BrokenPipeError:
+        print("failed to send response")
+        pass
+    return t_human, data, response
 
 
-
+def get_dispatch_from(x):
+    d = collections.OrderedDict()
+    for m in sorted(dir(x)):
+        if not m.startswith("_") and callable(getattr(x,m)):
+            d[m] = getattr(x, m)
+    return d
 
 # def make_log_func():
 #     log_dir = os.path.expanduser("~/.scan_server")
@@ -75,25 +113,46 @@ def handle_one_message(socket, dispatch, verbose):
 #         print(request)
 #     return log
 
-def start(address="localhost", port=4000):
-    print("TES Scan Server")
-    print(f"{address}:{port}")
+def start(address, port, dispatch, verbose, log_file, no_traceback_error_types):
+    terminal_size = shutil.get_terminal_size((80, 20)) 
+    print(f"TES Scan Server @ {address}:{port}")
+    print("Ctrl-C to exit")
+    print(f"Log File: {log_file.name}")
+    print("methods:")
+    for k, m in dispatch.items():
+        wrapped = textwrap.wrap(f"{k}{signature(m)}", width=terminal_size.columns, 
+            initial_indent="* ", subsequent_indent="\t" )
+        for l in wrapped:
+            print(l)
     serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # bind the socket to a public host, and a well-known port
     serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     serversocket.bind((address, port))
     # become a server socket
     serversocket.listen(1)
-
+    if log_file is not None:
+        log_file.write(f"{dispatch}\n")
     try:
         while True:
             # accept connections from outside
             (clientsocket, address) = serversocket.accept()
             print(f"connection from {address}")
             while True:
-                handle_one_message(clientsocket, DISPATCH, verbose=True)   
+                data = get_message(clientsocket)
+                if data is None:
+                    print(f"data was none, breaking to wait for connection")
+                    break
+                a = handle_one_message(clientsocket, data, dispatch, verbose, no_traceback_error_types)  
+                t_human, data, response = a
+                if log_file is not None:
+                    log_file.write(f"{t_human}")
+                    log_file.write(f"{data}\n")
+                    log_file.write(f"{response}\n")
     except KeyboardInterrupt:
         print("\nCtrl-C detected, shutting down")
+        if log_file is not None:
+            log_file.write(f"Ctrl-C at {time_human()}\n")
         return
     
      
+
