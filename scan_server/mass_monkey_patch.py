@@ -1,5 +1,6 @@
 import mass
 import numpy as np
+from mass.calibration import algorithms
 
 
 def unixnanos_to_state_slices(ds_unixnano, starts_unixnano, ends_unixnano):
@@ -23,6 +24,15 @@ def data_histWithUnixnanos(self, bin_edges, attr, starts_unixnano, ends_unixnano
     return bin_centers, counts
 
 mass.off.ChannelGroup.histWithUnixnanos = data_histWithUnixnanos
+
+def ds_learnCalibrationPlanFromEnergiesAndPeaks(self, attr, states, ph_fwhm, line_names):
+    peak_ph_vals, _peak_heights = algorithms.find_local_maxima(self.getAttr(attr, indsOrStates=states), ph_fwhm)
+    _name_e, energies_out, opt_assignments = algorithms.find_opt_assignment(peak_ph_vals, line_names)
+
+    self.calibrationPlanInit(attr)
+    for ph, name in zip(opt_assignments, _name_e):
+        self.calibrationPlanAddPoint(ph, name, states=states)
+mass.off.Channel.learnCalibrationPlanFromEnergiesAndPeaks = ds_learnCalibrationPlanFromEnergiesAndPeaks
 
 # from collections import OrderedDict
 # from typing import List, Dict

@@ -26,14 +26,25 @@ def test_analysis():
     data.setDefaultBinsize(0.5)
 
     ds = data.firstGoodChannel()
-    ds.calibrationPlanInit("filtValue")
-    ds.calibrationPlanAddPoint(4374, 'CKAlpha')
-    ds.calibrationPlanAddPoint(5992, 'NKAlpha')
-    ds.calibrationPlanAddPoint(7789, 'OKAlpha')
-    ds.calibrationPlanAddPoint(10047, 'FeLAlpha')
-    ds.calibrationPlanAddPoint(11730, 'NiLAlpha')
-    ds.calibrationPlanAddPoint(12599, 'CuLAlpha')
+    # ds.calibrationPlanInit("filtValue")
+    # ds.calibrationPlanAddPoint(4374, 'CKAlpha', states="CAL0")
+    # ds.calibrationPlanAddPoint(5992, 'NKAlpha', states="CAL0")
+    # ds.calibrationPlanAddPoint(7789, 'OKAlpha', states="CAL0")
+    # ds.calibrationPlanAddPoint(10047, 'FeLAlpha', states="CAL0")
+    # ds.calibrationPlanAddPoint(11730, 'NiLAlpha', states="CAL0")
+    # ds.calibrationPlanAddPoint(12599, 'CuLAlpha', states="CAL0")
     # ds.calibrationPlanAddPoint(13350, "mono", energy=1000)
+
+
+
+    # ds.plotHist(np.arange(20000), "filtValue", states="CAL0")
+    # plt.plot(peak_ph_vals[:10], _peak_heights[:10]*11/0.3, "o")
+    # plt.show()
+    # plt.pause(10)
+
+    line_names = ["CKAlpha", "NKAlpha", "OKAlpha", "FeLAlpha", "NiLAlpha", "CuLAlpha"]
+    ds.learnCalibrationPlanFromEnergiesAndPeaks(attr="filtValue", states="CAL0", ph_fwhm=30, line_names=line_names)
+    assert list(ds.calibrationPlan.uncalibratedVals) == [4363.981866173563, 5985.5503863614285, 7792.096878078883, 10043.34331879334, 11737.72002893791, 12585.177247340907]
 
     for ds in data.values()[1:]:
         ds.learnResidualStdDevCut(n_sigma_equiv=10, plot=False, setDefault=True)

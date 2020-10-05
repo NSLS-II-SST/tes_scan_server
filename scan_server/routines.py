@@ -6,14 +6,8 @@ def ssrl_10_1_mix_cal(cal_number, data):
 
     cal_state = f"CAL{cal_number}"
     ds = data.firstGoodChannel()
-    ds.calibrationPlanInit("filtValue")
-    ds.calibrationPlanAddPoint(4374, 'CKAlpha', states=cal_state)
-    ds.calibrationPlanAddPoint(5992, 'NKAlpha', states=cal_state)
-    ds.calibrationPlanAddPoint(7789, 'OKAlpha', states=cal_state)
-    ds.calibrationPlanAddPoint(10047, 'FeLAlpha', states=cal_state)
-    ds.calibrationPlanAddPoint(11730, 'NiLAlpha', states=cal_state)
-    ds.calibrationPlanAddPoint(12599, 'CuLAlpha', states=cal_state)
-    # ds.calibrationPlanAddPoint(13350, "mono", energy=1000)
+    line_names = ["CKAlpha", "NKAlpha", "OKAlpha", "FeLAlpha", "NiLAlpha", "CuLAlpha"]
+    ds.learnCalibrationPlanFromEnergiesAndPeaks(attr="filtValue", states="CAL0", ph_fwhm=30, line_names=line_names)
 
     for ds in data.values()[1:]:
         ds.learnResidualStdDevCut(n_sigma_equiv=10, plot=False, setDefault=True)
