@@ -114,7 +114,7 @@ def test_tes_scanner():
     assert r == "started new process"
     r = scanner.start_post_processing(_max_channels=3)
     assert r == "previous process still running"
-    scanner.background_process.wait(timeout=10)
+    scanner.background_process.wait(timeout=30)
 
     assert os.path.isfile(os.path.join(base_user_output_dir, "beamtime_test/scan0001/scan0001_hist2d.png"))
 
