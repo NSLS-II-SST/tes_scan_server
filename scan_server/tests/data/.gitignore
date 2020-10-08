@@ -1,3 +1,4 @@
 *_experiment_state.txt
 logs/
 base_user_output_dir
+background_process_log_file

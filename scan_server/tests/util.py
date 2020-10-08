@@ -28,7 +28,7 @@ def scan_logs_raw():
 def scan_from_log(log: dict):
     "make Scan objects from .yaml logs from Jamie's software"
     scan = Scan(var_name="mono", var_unit="eV", scan_num=log["header"]["htxs"], beamtime_id="test",
-                sample_id=0, sample_desc=d17[0]["sample"], extra={},
+                sample_id=0, sample_desc=d17[0]["sample"], extra={}, user_output_dir="dummy",
                 data_path="no actual data", previous_cal_log = None, drift_correction_plan = None)
     for i, mono_val in enumerate(log["mono"].keys()):
         start, end = log["mono"][mono_val]
@@ -89,6 +89,5 @@ def pre_test_cleanup():
     silentremovedir(os.path.join(ssrl_dir, "logs"))
     silentremovedir(os.path.join(ssrl_dir, "base_user_output_dir"))
 
-
-
 pre_test_cleanup()
+

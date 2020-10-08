@@ -5,13 +5,16 @@ import time
 from . import routines
 import mass
 from mass.off import ChannelGroup, getOffFileListFromOneFile, Channel, labelPeak, labelPeaks
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from dataclasses_json import dataclass_json
 import io
 import pylab as plt
 import os
 from pathlib import Path
 from . import mass_monkey_patch
+import h5py
+from scan_server import post_process
+import subprocess
 
 
 
@@ -32,6 +35,11 @@ class CalibrationLog():
         with open(filename, "w") as f:
             f.write(self.to_json(indent=2))
 
+    @classmethod
+    def from_file(cls, filename):
+        with open(filename, "rb") as f:
+            return cls.from_json(f.read())
+
 @dataclass_json
 @dataclass
 class Scan():
@@ -43,6 +51,7 @@ class Scan():
     sample_desc: str
     extra: dict
     data_path: str
+    user_output_dir: str
     previous_cal_log: CalibrationLog
     drift_correction_plan: str
     point_extras: List[dict] = field(default_factory=list)
@@ -84,7 +93,7 @@ class Scan():
         return f"scan{self.scan_num} sample{self.sample_id} beamtime_id{self.beamtime_id}"
 
     def __repr__(self):
-        return f"<Scan num{self.scan_num} beamtime_id{self.beamtime_id} ext_id{self.ext_id} npts{len(self.var_values)}"
+        return f"<Scan num{self.scan_num} beamtime_id{self.beamtime_id} npts{len(self.var_values)}>"
 
     def hist2d(self, data, bin_edges, attr):
         starts_nano = (1e9*np.array(self.epoch_time_start_s)).astype(int)
@@ -106,13 +115,18 @@ class Scan():
         with open(filename, "w") as f:
             f.write(self.to_json(indent=2))
 
+    @classmethod
+    def from_file(cls, filename):
+        with open(filename, "rb") as f:
+            return cls.from_json(f.read())
+
 
 @dataclass
 class ScanHist2DResult():
     hist2d: Any # really np.ndarray
     var_name: str
     var_unit: str
-    var_vals: Any # really np.nda
+    var_vals: Any # really np.ndarray
     bin_centers: Any # really np.ndarray
     attr: str
     attr_unit: str
@@ -120,11 +134,12 @@ class ScanHist2DResult():
     pulse_file_desc: str
 
     def plot(self):
-        plt.figure()
+        fig = plt.figure()
         plt.contourf(self.var_vals, self.bin_centers, self.hist2d, cmap="gist_heat")
         plt.xlabel(f"{self.var_name} ({self.var_unit})")
         plt.ylabel(f"{self.attr} ({self.attr_unit})")
         plt.title(self.scan_desc)
+        return fig
 
     def __add__(self, other):
         assert self.var_name == other.var_name
@@ -136,6 +151,25 @@ class ScanHist2DResult():
         assert self.pulse_file_desc == other.pulse_file_desc
         return ScanHist2DResult(self.hist2d+other.hist2d, self.var_name, self.var_unit, self.var_vals,
         self.bin_centers, self.attr, self.attr_unit, "sum scan", self.pulse_file_desc)
+
+    def to_hdf5_file(self, filename):
+        assert not os.path.isfile(filename)
+        with h5py.File(filename, "w") as h5:
+            self.to_hdf5(h5)     
+
+    def to_hdf5(self, h5):
+        for field in fields(self):
+            h5[field.name] = getattr(self, field.name)
+    
+    @classmethod
+    def from_hdf5(cls, h5):
+        args = [h5[field.name] for field in fields(cls)]
+        return cls(*args)
+
+    @classmethod
+    def from_hdf5_file(cls, filename):
+        with h5py.File(filename, "r") as h5:
+            return cls.from_hdf5(h5)
 
 class ScannerState(StateMachine):
     """defines allowed state transitions, transitions will error if you do an invalid one"""
@@ -160,12 +194,15 @@ class ScannerState(StateMachine):
 
 class TESScanner():
     """talks to dastard and mass"""
-    def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str):
+    def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str, background_process_log_file):
         self.dastard = dastard
         self.beamtime_id = beamtime_id
         self.base_user_output_dir = base_user_output_dir
         self.state: ScannerState = ScannerState()
         self._reset()
+        self.background_process = None # dont put this in _reset, we want it to persist over reset
+        self.background_process_log_file = background_process_log_file
+
 
     def _reset(self):
         self.last_scan = None
@@ -210,13 +247,15 @@ class TESScanner():
         self.next_cal_number += 1
         assert len(self.calibration_to_routine) == self.next_cal_number
 
-    def calibration_data_end(self):
+    def calibration_data_end(self, _try_post_processing=True):
         """stop taking calabration data, will write a log file"""
         self.state.cal_data_end()
         self.dastard.set_experiment_state("PAUSE")
         self.calibration_log.end_unixnano = time_unixnano()
         for fname in self._log_filenames("calibration", self.calibration_log.cal_number):
             self.calibration_log.to_disk(fname)
+        if _try_post_processing:
+            self.start_post_processing()
 
     def calibration_learn_from_last_data(self):
         """use the last calibration data plus the specified routine to learn the realtime energy calibration curves"""
@@ -228,7 +267,7 @@ class TESScanner():
         # print(f"{routine=} {cal_number=}")
         routine = routines.get(routine)
         data.refreshFromFiles()
-        return routine(cal_number, data)
+        return routine(cal_number, data, attr="filtValue", calibratedName="energy")
 
     def roi_set(self, rois_list: List):
         """must be alled before other roi functions
@@ -265,23 +304,31 @@ class TESScanner():
         self.state.scan_start()
         data_path = self.dastard.get_data_path()
         self._validate_drift_correction_plan(drift_correction_plan)
+        user_output_dir = self._scan_user_output_dir(scan_num, make=False)
         self.scan = Scan(var_name, var_unit, scan_num, self.beamtime_id, sample_id, 
             sample_desc, extra, data_path,
+            user_output_dir,
             previous_cal_log=self.calibration_log,
             drift_correction_plan=drift_correction_plan)
         self.dastard.set_experiment_state(f"SCAN{scan_num}")
 
-    def scan_point_start(self, scan_var: float, extra: dict):
+    def scan_point_start(self, scan_var: float, extra: dict, _epoch_time_s_for_test=None):
         self.state.scan_point_start()
-        epoch_time_s = time.time()
+        if _epoch_time_s_for_test is None:
+            epoch_time_s = time.time()
+        else:
+            epoch_time_s = _epoch_time_s_for_test
         self.scan.point_start(scan_var, epoch_time_s, extra)
 
-    def scan_point_end(self):
+    def scan_point_end(self, _epoch_time_s_for_test=None):
         self.state.scan_point_end()
-        epoch_time_s = time.time()
+        if _epoch_time_s_for_test is None:
+            epoch_time_s = time.time()
+        else:
+            epoch_time_s = _epoch_time_s_for_test
         self.scan.point_end(epoch_time_s)
 
-    def scan_end(self):
+    def scan_end(self, _try_post_processing=True):
         self.state.scan_end()
         self.scan.end()
         for fname in self._log_filenames("scan", self.scan.scan_num):
@@ -289,35 +336,43 @@ class TESScanner():
         self.last_scan = self.scan
         self.scan = None
         self.dastard.set_experiment_state("PAUSE")
+        if _try_post_processing:
+            self.start_post_processing()
         
-    def scan_start_calc_last_outputs(self):
-        scan_hist2d = self.last_scan.hist2d(self._get_data(), np.arange(0, 1000, 1), "energy")
-        scan_hist2d.plot()
-        scan_num = self.last_scan.scan_num
-        fname = os.path.join(self._scan_user_output_dir(scan_num, "plots"), f"rt_{scan_num}.png")
-        plt.savefig(fname)
-        plt.close()
-        print(fname)
-        # TODO.... make this async and make it do higher quality analysis
-        # self.launch_process_to_calc_outputs(drift_correction_plan)
-        return
+    def start_post_processing(self, _wait_for_finish=False, _max_channels=10000):
+        if self.background_process is not None:
+            # we could remove this logic and let more than one background process run
+            # it would be slightly faster
+            # but first we would want to improve the logic on deciding which channels to process
+            # right now it is based on the directory created when it is done, so if you start
+            # two processes quickly, they will do the same work
+            isdone = self.background_process.poll() is not None
+            if not isdone:
+                return "previous process still running"
+        args = ["process_scans", self._beamtime_user_output_dir(), f"--max_channels={_max_channels}"]
+        print(args)
+
+        self.background_process = subprocess.Popen(args, stdout = self.background_process_log_file, stderr=subprocess.STDOUT)
+        return "started new process"
 
     def file_end(self):
         self.state.file_end()
         self._reset()
     
-    def _beamtime_user_output_dir(self, subdir = None):
+    def _beamtime_user_output_dir(self, subdir = None, make = True):
         dirname = os.path.join(self.base_user_output_dir, f"beamtime_{self.beamtime_id}")
         if subdir is not None:
             dirname = os.path.join(dirname, subdir)
-        Path(dirname).mkdir(parents=True, exist_ok=True)
+        if make:
+            Path(dirname).mkdir(parents=True, exist_ok=True)
         return dirname
 
-    def _scan_user_output_dir(self, scan_num, subdir = None):
-        dirname = self._beamtime_user_output_dir(f"scan{scan_num:4d}")
+    def _scan_user_output_dir(self, scan_num, subdir = None, make = True):
+        dirname = self._beamtime_user_output_dir(f"scan{scan_num:04d}", make = make)
         if subdir is not None:
             dirname = os.path.join(dirname, subdir)
-        Path(dirname).mkdir(parents=True, exist_ok=True)
+        if make:
+            Path(dirname).mkdir(parents=True, exist_ok=True)
         return dirname
         
     def _user_log_dir(self):
@@ -340,7 +395,7 @@ class TESScanner():
         return [filename1, filename2]        
 
     def _validate_drift_correction_plan(self, drift_correction_plan):
-        if drift_correction_plan not in ["testing_not_real"]:
+        if drift_correction_plan not in ["none", "basic", "before_and_after_cals"]:
             raise Exception("invalid drift plan")
 
 def time_unixnano():

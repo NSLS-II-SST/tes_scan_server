@@ -95,8 +95,8 @@ class DastardClient():
         contents = self.listener.get_message_with_topic("WRITING")
         if not contents["Active"]:
             raise DastardError(f"Response from Dastard RPC should have contents[\"Active\"]=True, but it does not\nconents:\n{contents}")
-        off_filename = contents["FilenamePattern"]%("chan1","off")
-        return off_filename
+        self.off_filename = contents["FilenamePattern"]%("chan1","off")
+        return self.off_filename
 
     def stop_file(self):
         payload = {"Request": "Stop"}
@@ -109,5 +109,5 @@ class DastardClient():
         self._call("", self.pulse_trigger_params)
 
     def get_data_path(self):
-        return "PLACEHOLDER DATA PATH"
+        return self.off_filename
 

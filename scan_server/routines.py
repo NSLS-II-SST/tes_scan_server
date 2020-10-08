@@ -1,21 +1,21 @@
 import numpy as np
 
 
-def ssrl_10_1_mix_cal(cal_number, data):
+def ssrl_10_1_mix_cal(cal_number, data, attr, calibratedName):
     data.setDefaultBinsize(0.5)
 
     cal_state = f"CAL{cal_number}"
     ds = data.firstGoodChannel()
     line_names = ["CKAlpha", "NKAlpha", "OKAlpha", "FeLAlpha", "NiLAlpha", "CuLAlpha"]
-    ds.learnCalibrationPlanFromEnergiesAndPeaks(attr="filtValue", states="CAL0", ph_fwhm=30, line_names=line_names)
+    ds.learnCalibrationPlanFromEnergiesAndPeaks(attr=attr, states="CAL0", ph_fwhm=30, line_names=line_names)
 
     for ds in data.values()[1:]:
         ds.learnResidualStdDevCut(n_sigma_equiv=10, plot=False, setDefault=True)
     ds = data[1] # the above loop rebinds ds to the last dataset, but lets keep looking at the same one
     ds.learnResidualStdDevCut(n_sigma_equiv=10, plot=False, setDefault=True)
 
-    data.alignToReferenceChannel(ds, "filtValue", np.arange(0, 30000,  6))
-    data.calibrateFollowingPlan("filtValue", calibratedName="energy",
+    data.alignToReferenceChannel(ds, attr, np.arange(0, 30000,  6))
+    data.calibrateFollowingPlan(attr, calibratedName=calibratedName,
         dlo=15, dhi=15, overwriteRecipe=True)
     
 

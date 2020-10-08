@@ -17,14 +17,16 @@ def start():
     dastard_port = 5500
     address = "localhost"
     port = 4000
+    time_human = rpc_server.time_human()
 
     no_traceback_error_types = [scan_server.dastard_client.DastardError, statemachine.exceptions.TransitionNotAllowed]
 
-    dastard_listener = DastardListener(dastard_host, dastard_port, )
+    dastard_listener = DastardListener(dastard_host, dastard_port)
     dastard = DastardClient((dastard_host, dastard_port), listener = dastard_listener,
         pulse_trigger_params = None, noise_trigger_params = None)
-    scanner = TESScanner(dastard, beamtime_id, base_user_output_dir)
-    server_log_filename = os.path.join(server_log_dir, f"{rpc_server.time_human()}.log")
+    bg_log_file = os.path.join(server_log_dir, f"{time_human}_bg.log")
+    scanner = TESScanner(dastard, beamtime_id, base_user_output_dir, bg_log_file)
+    server_log_filename = os.path.join(server_log_dir, f"{time_human}.log")
     dispatch = rpc_server.get_dispatch_from(scanner)
     print("Starting SSRL Scan Server")
     with open(server_log_filename, "w") as f:

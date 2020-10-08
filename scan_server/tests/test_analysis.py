@@ -63,3 +63,6 @@ def test_analysis():
     results[1].plot()
     mega_result = results[0] + results[1] + results[2] + results[3] + results[4] + results[5] 
     mega_result.plot()
+
+    for result, s in zip(results + [mega_result], [1447, 1443, 1443, 1463, 1384, 1406, 8586]):
+        assert result.hist2d.sum() == s
