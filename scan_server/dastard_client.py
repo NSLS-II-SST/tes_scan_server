@@ -48,11 +48,9 @@ class DastardError(Exception):
     pass
 
 class DastardClient():
-    def __init__(self, addr_port, listener, pulse_trigger_params, noise_trigger_params):
+    def __init__(self, addr_port, listener):
         self.addr_port = addr_port
         self.listener = listener
-        self.pulse_trigger_params = pulse_trigger_params
-        self.noise_trigger_params = noise_trigger_params
         self._id_iter = itertools.count()
         self._connect()
 
@@ -98,15 +96,47 @@ class DastardClient():
         self.off_filename = contents["FilenamePattern"]%("chan1","off")
         return self.off_filename
 
-    def stop_file(self):
-        payload = {"Request": "Stop"}
-        response = self._call("SourceControl.WriteControl", params)
+
+    def stop_source(self):
+        response = self._call("SourceControl.Stop", "")
+
+    def configure_simulate_pulse_source(self, nchan, sample_rate_hz, pedestal, amplitudes, samples_per_pulse):
+        params = {"Nchan": nchan,
+        "SampleRate" : sample_rate_hz,
+        "Pedestal": pedestal,
+        "Amplitudes": amplitudes,
+        "Nsamp": samples_per_pulse}
+        response = self._call("SourceControl.ConfigureSimPulseSource", params)
+
+    def start_sim_pulse_source(self):
+        response = self._call("SourceControl.Start", "SIMPULSESOURCE")
 
     def set_experiment_state(self, state):
-        pass
+        params = {"Label": state,
+        "WaitForError": False}
+        response = self._call("SourceControl.SetExperimentStateLabel", params)
 
-    def set_pulse_triggers(self):
-        self._call("", self.pulse_trigger_params)
+    def set_triggers(self, full_trigger_state):
+        response = self._call("SourceControl.ConfigureTriggers", full_trigger_state)
+
+    def start_writing_ljh22(self):
+        params = {"Request": "Start",
+        "WriteLJH22": True}
+        response = self._call("SourceControl.WriteControl", params)
+
+    def start_writing_off(self):
+        params = {"Request": "Start",
+        "WriteOFF": True}
+        response = self._call("SourceControl.WriteControl", params)
+    
+    def stop_writing(self):
+        params = {"Request": "Stop"}
+        response = self._call("SourceControl.WriteControl", params)
+
+    def configure_record_lengths(self, npre, nsamp):
+        params = {"Nsamp": nsamp,
+        "Npre": npre}
+        response = self._call("SourceControl.ConfigurePulseLengths", params)
 
     def get_data_path(self):
         return self.off_filename

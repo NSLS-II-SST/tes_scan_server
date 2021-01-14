@@ -1,0 +1,3 @@
+# unix time in nanoseconds, state label
+1610589745658726000, START
+1610589750661793000, STOP
