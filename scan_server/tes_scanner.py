@@ -96,9 +96,8 @@ class Scan():
         return f"<Scan num{self.scan_num} beamtime_id{self.beamtime_id} npts{len(self.var_values)}>"
 
     def hist2d(self, data, bin_edges, attr):
-        starts_nano = (1e9*np.array(self.epoch_time_start_s)).astype(int)
-        ends_nano = (1e9*np.array(self.epoch_time_end_s)).astype(int)
-        assert len(starts_nano) == len(ends_nano)
+        starts_nano = int(1e9)*np.array(self.epoch_time_start_s, dtype="int64")
+        ends_nano = int(1e9)*np.array(self.epoch_time_end_s, dtype="int64")
         var_name = self.var_name
         var_unit = self.var_unit
         var_vals = self.var_values

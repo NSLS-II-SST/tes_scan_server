@@ -167,5 +167,5 @@ def test_post_process_pieces():
             scan.drift_correction_plan, np.arange(0, 1000, 1), 
             scan.user_output_dir, max_channels = 3)
 
-    assert scan_hist2d.hist2d.sum() == 1443
+    assert scan_hist2d.hist2d.sum() == 1480
 
