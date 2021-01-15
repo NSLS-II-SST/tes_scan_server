@@ -237,7 +237,7 @@ class TESScanner():
         routine: str - which function is used to generate calibration curves from the data
         """
         self.state.cal_data_start()
-        self.dastard.set_pulse_triggers()
+        # self.set_pulse_triggers()
         self.dastard.set_experiment_state(f"CAL{self.next_cal_number}")
         self.calibration_to_routine.append(routine)
         self.calibration_log = CalibrationLog(start_unixnano=time_unixnano(),

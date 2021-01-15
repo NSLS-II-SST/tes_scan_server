@@ -46,7 +46,7 @@ def test_tes_scanner():
     base_user_output_dir = os.path.join(util.ssrl_dir, "base_user_output_dir")
     Path(base_user_output_dir).mkdir(parents=False, exist_ok=True)
     listener = MockListener()
-    client = MockClient(("test_url", "test_port"), listener, pulse_trigger_params = None, noise_trigger_params = None)
+    client = MockClient(("test_url", "test_port"), listener)
     bg_log_file = open(os.path.join(util.ssrl_dir, "background_process_log_file"), "w")
     scanner = TESScanner(dastard = client, beamtime_id ="test", base_user_output_dir=base_user_output_dir,
         background_process_log_file=bg_log_file)
