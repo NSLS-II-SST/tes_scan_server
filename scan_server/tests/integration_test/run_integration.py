@@ -85,7 +85,7 @@ def make_dastard_write_files_from_which_we_can_create_projectors():
     dc.start_writing(ljh22=True, off=False)
     sleep(1)
     dc.stop_writing()
-    # offline i copy the pulse files to this repo, then run
+    # offline i copied the pulse files to this repo, then run the mass make_projectors script with
     # python make_projectors data\0013\20210113_run0013_chan0.ljh data\0014\20210113_run0014_chan0.ljh -r
     # to create projectors
 
