@@ -68,6 +68,7 @@ def dastard_stop_source():
 
 def make_dastard_write_files_from_which_we_can_create_projectors():
     dastard_stop_source()
+    # set up simulated pulse source to make pulses with two different pulse heights
     dc.configure_simulate_pulse_source(1, sample_rate_hz=100000, pedestal=100, 
         amplitudes=[5000, 9000], samples_per_pulse=1000)
     dc.start_sim_pulse_source()
@@ -77,6 +78,7 @@ def make_dastard_write_files_from_which_we_can_create_projectors():
     sleep(1)
     dc.stop_writing()
     # for now we have to stop the source to turn down the amplitudes
+    # her we turn the amplitude to 0 so we can take "noise" data
     dc.stop_source() 
     dc.configure_simulate_pulse_source(1, sample_rate_hz=100000, pedestal=100, 
         amplitudes=[0], samples_per_pulse=1000)
