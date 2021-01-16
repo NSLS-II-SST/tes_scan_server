@@ -69,13 +69,19 @@ class DastardClient():
         "method": method_name} 
         return d
 
-    def _call(self, method_name: str, params):
+    def _call(self, method_name: str, params, verbose=True):
         msg = self._message(method_name, params)
-        print(f"Dastard Client: sending: {msg}")
+        if verbose: 
+            print(f"Dastard Client: sending: {msg}")
+        else:
+            print(f"Dastard Client: calling {method_name}")
         self._socket.sendall(json.dumps(msg).encode())
         response = self._socket.recv(4096)
         response = json.loads(response.decode())
-        print(f"Dastard Client: response: {response}")
+        if verbose:     
+            print(f"Dastard Client: response: {response}")
+        else:
+            print(f"Dastard Client: got response for {method_name}")
         if not response["id"] == msg["id"]:
             raise DastardError(f"response id does not match message id")
         err = response.get("error", None)
@@ -119,14 +125,12 @@ class DastardClient():
     def set_triggers(self, full_trigger_state):
         response = self._call("SourceControl.ConfigureTriggers", full_trigger_state)
 
-    def start_writing_ljh22(self):
+    def start_writing(self, ljh22, off, path=None):
         params = {"Request": "Start",
-        "WriteLJH22": True}
-        response = self._call("SourceControl.WriteControl", params)
-
-    def start_writing_off(self):
-        params = {"Request": "Start",
-        "WriteOFF": True}
+        "WriteLJH22": ljh22,
+        "WriteOff": off}
+        if path is not None:
+            params["Path"] = path
         response = self._call("SourceControl.WriteControl", params)
     
     def stop_writing(self):
