@@ -54,18 +54,20 @@ class Scan():
     user_output_dir: str
     previous_cal_log: CalibrationLog
     drift_correction_plan: str
-    point_extras: List[dict] = field(default_factory=list)
+    point_extras: dict
     var_values: List[float] = field(default_factory=list)
     epoch_time_start_s: List[int] = field(default_factory=list)
     epoch_time_end_s: List[int] = field(default_factory=list)
     _ended: bool = False
 
-    def point_start(self, scan_var, epoch_time_s, extra):
+    def point_start(self, scan_var, epoch_time_s, extra=None):
         assert not self._ended
         assert len(self.epoch_time_start_s) == len(self.epoch_time_end_s)
         assert isinstance(extra, dict)
         self.var_values.append(float(scan_var))
-        self.point_extras.append(extra)
+        if extra is not None:
+            idx = len(self.epoch_time_start_s)
+            self.point_extras[idx] = extra
         self.epoch_time_start_s.append(epoch_time_s)
 
     def point_end(self, epoch_time_s):
@@ -214,10 +216,10 @@ class TESScanner():
         self.calibration_log = None
         self.off_filename = None
 
-    def file_start(self):
+    def file_start(self, ljh22, off, path=None):
         """tell dastard to start a new file, must be called before any calibration or scan functions"""
         self.state.file_start()
-        self.off_filename = self.dastard.start_file()
+        self.off_filename = self.dastard.start_file(ljh22, off, path)
         # dastard lazily creates off files when it has data to write
         # so we need to wait to open the off files until some time has
         # passed from calling file_start
@@ -350,12 +352,12 @@ class TESScanner():
                 return "previous process still running"
         args = ["process_scans", self._beamtime_user_output_dir(), f"--max_channels={_max_channels}"]
         print(args)
-
         self.background_process = subprocess.Popen(args, stdout = self.background_process_log_file, stderr=subprocess.STDOUT)
         return "started new process"
 
     def file_end(self):
         self.state.file_end()
+        self.dastard.stop_writing()
         self._reset()
     
     def _beamtime_user_output_dir(self, subdir = None, make = True):
