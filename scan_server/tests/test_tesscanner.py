@@ -53,7 +53,7 @@ def test_tes_scanner():
     listener.set_next(topic="WRITING", contents ={"Active":True, "FilenamePattern": util.ssrl_filename_pattern})
     util.write_ssrl_experiment_state_file(util.ssrl_filename_pattern%("experiment_state","txt"))
     #write the full experiment state file all at once, it is much easier than emulating the data arriving
-    scanner.file_start()
+    scanner.file_start(True, False, None)
     assert client._last_method == "SourceControl.WriteControl"
     scanner.calibration_data_start(sample_id = 0, sample_desc = "test_sample", routine = "ssrl_10_1_mix_cal")
     scanner.calibration_data_end(_try_post_processing=False)
@@ -62,7 +62,7 @@ def test_tes_scanner():
                 sample_id=0, sample_desc="test_desc", extra = {"tempK":43.2}, 
                 drift_correction_plan = "before_and_after_cals")
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
-        scanner.file_start() # start file while file started not allowed
+        scanner.file_start(True, False, None) # start file while file started not allowed
     scanner.scan_point_start(122, extra={})
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
         scanner.scan_point_start(122, extra={}) # start point 2x in a row not allowed

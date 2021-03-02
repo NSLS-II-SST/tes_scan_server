@@ -65,8 +65,8 @@ class Scan():
         assert len(self.epoch_time_start_s) == len(self.epoch_time_end_s)
         assert isinstance(extra, dict)
         self.var_values.append(float(scan_var))
-        if extra is not None:
-            idx = len(self.epoch_time_start_s)
+        if extra is not None and extra != {}:
+            idx = str(len(self.epoch_time_start_s))
             self.point_extras[idx] = extra
         self.epoch_time_start_s.append(epoch_time_s)
 
