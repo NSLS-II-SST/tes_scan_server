@@ -54,7 +54,7 @@ class Scan():
     user_output_dir: str
     previous_cal_log: CalibrationLog
     drift_correction_plan: str
-    point_extras: dict
+    point_extras: dict = field(default_factory=dict)
     var_values: List[float] = field(default_factory=list)
     epoch_time_start_s: List[int] = field(default_factory=list)
     epoch_time_end_s: List[int] = field(default_factory=list)
