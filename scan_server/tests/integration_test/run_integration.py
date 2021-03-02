@@ -56,7 +56,7 @@ def sleep(x):
 
 noise_trigger_state = {'ChannelIndices': [0], 'AutoTrigger': True, 'AutoDelay': 0, 'LevelTrigger': False, 'LevelRising': False, 'LevelLevel': 0, 'EdgeTrigger': False, 'EdgeRising': False, 'EdgeFalling': False, 'EdgeLevel': 0, 'EdgeMulti': False, 'EdgeMultiNoise': False, 'EdgeMultiMakeShortRecords': False, 'EdgeMultiMakeContaminatedRecords': False, 'EdgeMultiDisableZeroThreshold': False, 'EdgeMultiLevel': 0, 'EdgeMultiVerifyNMonotone': 0}
 pulse_trigger_state = {'ChannelIndices': [0], 'AutoTrigger': False, 'AutoDelay': 0, 'LevelTrigger': False, 'LevelRising': False, 'LevelLevel': 0, 'EdgeTrigger': False, 'EdgeRising': False, 'EdgeFalling': False, 'EdgeLevel': 0, 'EdgeMulti': True, 'EdgeMultiNoise': False, 'EdgeMultiMakeShortRecords': False, 'EdgeMultiMakeContaminatedRecords': False, 'EdgeMultiDisableZeroThreshold': False, 'EdgeMultiLevel': 100, 'EdgeMultiVerifyNMonotone': 1}
-host, port = ("192.168.1.143", 5500)
+host, port = ("localhost", 5500)
 listener = DastardListener(host, port)
 dc = DastardClient((host, port), listener)
 def dastard_stop_source():
@@ -110,8 +110,8 @@ def make_dastard_be_writing_off_files(start_writing):
         # TESScanner could be made consistent with "file_open" with some work
         dc.start_writing(ljh22=False, off=True, path="/tmp")
 
-# make_dastard_write_files_from_which_we_can_create_projectors()
-make_dastard_be_writing_off_files(start_writing=True)
+#make_dastard_write_files_from_which_we_can_create_projectors()
+make_dastard_be_writing_off_files(start_writing=False)
 
 # to get further towards a beamline free integration test
 # we should change start_writing to False above

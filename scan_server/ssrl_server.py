@@ -10,7 +10,7 @@ import statemachine
 
 def start():
     beamtime_id = 1
-    base_user_output_dir = "/var/folders/_0/25kp6h7x25v6vyjv2yjlcnkm000wrm/T"
+    base_user_output_dir = "/tmp"
     server_log_dir = os.path.expanduser("~/.scan_server")
     Path(server_log_dir).mkdir(parents=True, exist_ok=True)
     dastard_host = "localhost"
@@ -22,9 +22,9 @@ def start():
     no_traceback_error_types = [scan_server.dastard_client.DastardError, statemachine.exceptions.TransitionNotAllowed]
 
     dastard_listener = DastardListener(dastard_host, dastard_port)
-    dastard = DastardClient((dastard_host, dastard_port), listener = dastard_listener,
-        pulse_trigger_params = None, noise_trigger_params = None)
-    bg_log_file = os.path.join(server_log_dir, f"{time_human}_bg.log")
+    dastard = DastardClient((dastard_host, dastard_port), listener = dastard_listener)#,
+    #pulse_trigger_params = None, noise_trigger_params = None)
+    bg_log_file = open(os.path.join(server_log_dir, f"{time_human}_bg.log"), 'a')
     scanner = TESScanner(dastard, beamtime_id, base_user_output_dir, bg_log_file)
     server_log_filename = os.path.join(server_log_dir, f"{time_human}.log")
     dispatch = rpc_server.get_dispatch_from(scanner)

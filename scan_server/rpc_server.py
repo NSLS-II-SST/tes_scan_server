@@ -62,7 +62,11 @@ def make_simple_response(_id, method_name, args, result, error):
 
 def get_message(sock):
     try:
-        return sock.recv(2**12)
+        msg = sock.recv(2**12)
+        if msg == b'':
+            return None
+        else:
+            return msg
     except ConnectionResetError:
         return None
 

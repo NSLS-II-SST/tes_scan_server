@@ -89,12 +89,14 @@ class DastardClient():
             raise DastardError(f"""Dastard responded with error: {err}""") 
         return response["result"]
 
-    def start_file(self):
+    def start_file(self, ljh22, off, path=None):
         params = {"Request": "Start",
-        "WriteLJH22": True,
+        "WriteLJH22": ljh22,
         "WriteLJH3": False,
-        "WriteOFF": False,
+        "WriteOFF": off,
         }
+        if path is not None:
+            params["Path"] = path
         response = self._call("SourceControl.WriteControl", params)
         contents = self.listener.get_message_with_topic("WRITING")
         if not contents["Active"]:
