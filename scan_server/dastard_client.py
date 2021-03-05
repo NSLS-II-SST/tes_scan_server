@@ -48,6 +48,25 @@ class DastardError(Exception):
     pass
 
 class DastardClient():
+    """
+    Assumptions: 
+    1. Dastard has just been started.
+    2. A source has just been stareted.
+    3. Projectors have been loaded.
+    4. Triggers have been set.
+    5. (implied by above) Dastard is not writing.
+    
+    Potential Future:
+    
+    We could instead reduce the assumptions to:
+    1. Dastard has a source running.
+    2. Dastard is not writing.
+    3. Projectors have been loaded. 
+    4. Triggers have been set.
+
+    We may also want TESScanner to load projectors and/or set triggers.
+    """
+
     def __init__(self, addr_port, listener):
         self.addr_port = addr_port
         self.listener = listener

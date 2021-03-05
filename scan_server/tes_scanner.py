@@ -52,6 +52,7 @@ class Scan():
     extra: dict
     data_path: str
     user_output_dir: str
+    # could add roi_list
     previous_cal_log: CalibrationLog
     drift_correction_plan: str
     point_extras: dict = field(default_factory=dict)
@@ -260,6 +261,13 @@ class TESScanner():
 
     def calibration_learn_from_last_data(self):
         """use the last calibration data plus the specified routine to learn the realtime energy calibration curves"""
+        #INTENT: Nothing can prevent data taking, and we should be able to manually
+        # fix calibration somehow.
+        # 1. we should have a "failed calibration" state that allow data taking to proceed,
+        # all functionatily should work in this state, but we can return 0 for roi_counts
+        # we should always have a "TFY" ROI, so that can return true values during failed calibration
+        # 2. There should be a way to "fix" the calibration, either a pickle file that we can write to
+        # or a exposed RPC method you can call to register a new calibration or something.
         self._calibration_apply_routine(self.calibration_log.routine, 
             self.calibration_log.cal_number, self._get_data())
         # now we can access energy
@@ -270,6 +278,7 @@ class TESScanner():
         data.refreshFromFiles()
         return routine(cal_number, data, attr="filtValue", calibratedName="energy")
 
+    # could take (name, hi, lo)
     def roi_set(self, rois_list: List):
         """must be alled before other roi functions
         rois_list: a list of (lo, hi) energy pairs in eV, each pair specifies a region of interest""" 
@@ -311,6 +320,9 @@ class TESScanner():
             user_output_dir,
             previous_cal_log=self.calibration_log,
             drift_correction_plan=drift_correction_plan)
+        # we could record the ROIs (name, lo, hi) so when we do post_process 
+        # we can label the plots with the names 
+        # quick post process would be called from TESScanner which knows about the rois
         self.dastard.set_experiment_state(f"SCAN{scan_num}")
 
     def scan_point_start(self, scan_var: float, extra: dict, _epoch_time_s_for_test=None):
