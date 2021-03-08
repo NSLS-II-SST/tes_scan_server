@@ -29,8 +29,10 @@ def call_method_from_data(data, dispatch, no_traceback_error_types):
         return _id, None, None, None, f"method key does not exist"
     method_name = d["method"]
     if "params" not in d.keys():
-        return _id, method_name, None, None, f"params key does not exist"   
-    args = d["params"]
+        args = []
+        #return _id, method_name, None, None, f"params key does not exist"
+    else:
+        args = d["params"]
     if method_name not in dispatch.keys():
         return _id, method_name, args, None, f"Method '{method_name}' does not exit, valid methods are {list(dispatch.keys())}"
     method = dispatch[method_name]

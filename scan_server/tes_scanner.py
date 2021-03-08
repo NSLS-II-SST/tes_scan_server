@@ -29,6 +29,7 @@ class CalibrationLog():
     beamtime_id: str
     routine: str
     cal_number: int
+    scan_num: int
 
     def to_disk(self, filename):
         assert not os.path.isfile(filename)
@@ -216,10 +217,12 @@ class TESScanner():
         self.calibration_log = None
         self.off_filename = None
 
-    def file_start(self, ljh22, off, path=None):
+    def file_start(self, path=None):
         """tell dastard to start a new file, must be called before any calibration or scan functions"""
         self.state.file_start()
-        self.off_filename = self.dastard.start_file(ljh22, off, path)
+        ljh = False
+        off = True
+        self.off_filename = self.dastard.start_file(ljh, off, path)
         # dastard lazily creates off files when it has data to write
         # so we need to wait to open the off files until some time has
         # passed from calling file_start
@@ -231,7 +234,7 @@ class TESScanner():
             self._data = ChannelGroup(getOffFileListFromOneFile(self.off_filename))
         return self._data
 
-    def calibration_data_start(self, sample_id: int, sample_desc: str, routine: str):
+    def calibration_data_start(self, scan_num: int, sample_id: int, sample_desc: str, routine: str):
         """start taking calibraion data, ensure the appropriate x-rays are incident on the detector
         sample_id: int - for your reference
         sample_desc: str - for your reference
@@ -242,7 +245,7 @@ class TESScanner():
         self.dastard.set_experiment_state(f"CAL{self.next_cal_number}")
         self.calibration_to_routine.append(routine)
         self.calibration_log = CalibrationLog(start_unixnano=time_unixnano(),
-            end_unixnano=None, off_filename=self.off_filename,
+            end_unixnano=None, off_filename=self.off_filename, scan_num=scan_num,
             sample_id = sample_id, sample_desc = sample_desc, beamtime_id = self.beamtime_id, routine = routine, 
             cal_number = self.next_cal_number)
         self.next_cal_number += 1
