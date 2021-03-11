@@ -1,5 +1,5 @@
 from mass.off import ChannelGroup, getOffFileListFromOneFile, Channel, labelPeak, labelPeaks
-from scan_server import TESScanner, Scan, DastardClient
+from scan_server import TESScanner, DastardClient
 import mass
 import os
 import tempfile

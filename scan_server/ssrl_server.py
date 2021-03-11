@@ -1,4 +1,4 @@
-from scan_server import TESScanner, Scan, DastardClient, DastardListener, CalibrationLog, rpc_server
+from scan_server import TESScanner, DastardClient, DastardListener, rpc_server
 import os
 from pathlib import Path
 

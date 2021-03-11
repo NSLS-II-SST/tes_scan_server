@@ -1,6 +1,7 @@
 import numpy as np
 import pickle
 from mass.calibration import algorithms
+import mass
 from scan_server.mass_monkey_patch import unixnanos_to_state_slices
 
 def ssrl_10_1_mix_cal(cal_number, data, attr, calibratedName):
@@ -9,7 +10,7 @@ def ssrl_10_1_mix_cal(cal_number, data, attr, calibratedName):
     cal_state = f"CAL{cal_number}"
     ds = data.firstGoodChannel()
     line_names = ["CKAlpha", "NKAlpha", "OKAlpha", "FeLAlpha", "NiLAlpha", "CuLAlpha"]
-    ds.learnCalibrationPlanFromEnergiesAndPeaks(attr=attr, states="CAL0", ph_fwhm=30, line_names=line_names)
+    ds.learnCalibrationPlanFromEnergiesAndPeaks(attr=attr, states=cal_state, ph_fwhm=30, line_names=line_names)
 
     for ds in data.values()[1:]:
         ds.learnResidualStdDevCut(n_sigma_equiv=10, plot=False, setDefault=True)
@@ -19,7 +20,9 @@ def ssrl_10_1_mix_cal(cal_number, data, attr, calibratedName):
     data.alignToReferenceChannel(ds, attr, np.arange(0, 30000,  6))
     data.calibrateFollowingPlan(attr, calibratedName=calibratedName,
         dlo=15, dhi=15, overwriteRecipe=True)
-    
+    success = True
+    return success
+
 def pkl_from_off(filename):
     i = filename.index('chan')
     pkl = filename[:i] + 'cal.pkl'
@@ -27,7 +30,7 @@ def pkl_from_off(filename):
 
 def simulated_cal_mix(cal_number, data, attr, calibratedName):
     data.setDefaultBinsize(0.5)
-
+    mass.line_models.VALIDATE_BIN_SIZE = False
     cal_state = f"CAL{cal_number}"
     ds = data.firstGoodChannel()
     line_names = ['Line1', 'Line2']
@@ -48,6 +51,12 @@ def simulated_cal_mix(cal_number, data, attr, calibratedName):
     data.alignToReferenceChannel(ds, attr, np.arange(0, 10000,  6))
     data.calibrateFollowingPlan(attr, calibratedName=calibratedName,
         dlo=15, dhi=15, overwriteRecipe=True)
+
+    nchan = len(data.values())
+    nbad = len(data.whyChanBad)
+    badRatio = nbad/nchan
+    success = (badRatio < 0.75)
+    return success
 
 
     

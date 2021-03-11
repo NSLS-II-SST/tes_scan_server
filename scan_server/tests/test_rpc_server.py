@@ -36,7 +36,7 @@ def test_call_method_from_data():
 
     data = json.dumps({"method": "echo"})
     _id, method_name, args, result, error = rpc_server.call_method_from_data(data, dispatch, no_traceback_error_types)
-    assert error == "params key does not exist"
+    assert args == []
 
     data = json.dumps({"params": [1, 2]})
     _id, method_name, args, result, error = rpc_server.call_method_from_data(data, dispatch, no_traceback_error_types)

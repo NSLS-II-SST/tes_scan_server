@@ -1,7 +1,7 @@
 import os
 import yaml
 import numpy as np
-from scan_server import Scan, CalibrationLog
+from scan_server import DataScan
 import shutil
 
 
@@ -27,9 +27,9 @@ def scan_logs_raw():
 
 def scan_from_log(log: dict):
     "make Scan objects from .yaml logs from Jamie's software"
-    scan = Scan(var_name="mono", var_unit="eV", scan_num=log["header"]["htxs"], beamtime_id="test",
+    scan = DataScan(var_name="mono", var_unit="eV", scan_num=log["header"]["htxs"], beamtime_id="test",
                 sample_id=0, sample_desc=d17[0]["sample"], extra={}, user_output_dir="dummy",
-                data_path="no actual data", previous_cal_log = None, drift_correction_plan = None)
+                data_path="no actual data", drift_correction_plan = None)
     for i, mono_val in enumerate(log["mono"].keys()):
         start, end = log["mono"][mono_val]
         scan.point_start(mono_val, start, extra={})
