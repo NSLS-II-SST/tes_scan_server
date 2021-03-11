@@ -182,3 +182,13 @@ def testXAS(repeat=2, htxs=None):
     counts = (np.arange(len(grid)) + len(grid))
     runXAS(gscan_args, counts, repeat=repeat, time=3)
     file_stop()
+
+def testROICounts():
+    file_start()
+    runCal(5, dwell=1)
+    calibration_learn_from_last_data()
+    gscan_args = 'mono 700 705 1 1'
+    grid = gscan_grid(gscan_args)
+    counts = np.ones_like(grid)
+    runXAS(gscan_args, counts, repeat=2, time=0.5)
+    file_end()
