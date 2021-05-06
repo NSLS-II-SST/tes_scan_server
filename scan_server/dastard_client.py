@@ -138,6 +138,7 @@ class DastardClient():
     def stop_writing(self):
         params = {"Request": "Stop"}
         response = self._call("SourceControl.WriteControl", params)
+        contents = self.listener.get_message_with_topic("WRITING")
 
     def configure_record_lengths(self, npre, nsamp):
         params = {"Nsamp": nsamp,

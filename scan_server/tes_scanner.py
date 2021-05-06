@@ -34,6 +34,8 @@ class BaseScan():
     var_values: List[float] = field(default_factory=list)
     epoch_time_start_s: List[int] = field(default_factory=list)
     epoch_time_end_s: List[int] = field(default_factory=list)
+    rois_bin_edges: List[float] = field(default_factory=list)
+    rois_names: List[str] = field(default_factory=list)
     _ended: bool = field(default=False)
 
     def point_start(self, scan_var, epoch_time_s, extra=None):
@@ -72,7 +74,7 @@ class BaseScan():
 
     def __repr__(self):
         return f"<Scan num{self.scan_num} beamtime_id{self.beamtime_id} npts{len(self.var_values)}>"
-
+        
     def hist2d(self, data, bin_edges, attr):
         starts_nano = int(1e9)*np.array(self.epoch_time_start_s, dtype="int64")
         ends_nano = int(1e9)*np.array(self.epoch_time_end_s, dtype="int64")
@@ -200,6 +202,7 @@ class TESScanner():
         self._data = None
         self.roi_counts_start_unixnano = None
         self.rois_bin_edges = None
+        self.rois_names = None
         self.calibration_to_routine: List[str] = [] 
         self.calibration_state = "no_calibration"
         self.cal_number: int = -1
@@ -239,7 +242,8 @@ class TESScanner():
         user_output_dir = self._scan_user_output_dir(scan_num, make=False)
         self.scan = CalibrationScan(var_name, var_unit, scan_num, self.beamtime_id, sample_id, 
                                     sample_desc, extra, data_path, user_output_dir,
-                                    drift_correction_plan, routine=routine)
+                                    drift_correction_plan, routine=routine,
+                                    rois_bin_edges=self.rois_bin_edges, rois_names=self.rois_names)
         self.dastard.set_experiment_state(f"CAL{scan_num}")
         self.cal_number = scan_num
         
@@ -264,27 +268,26 @@ class TESScanner():
 
     def roi_set(self, rois_list: List):
         """must be alled before other roi functions
-        rois_list: a list of (lo, hi) energy pairs in eV, each pair specifies a region of interest""" 
+        rois_list: a list of (lo, hi, name) energy pairs in eV, each pair specifies a region of interest""" 
         # roi list is a a list of pairs of lo, hi energy pairs
         assert len(rois_list) > 0
         bin_edges = []
-        for (lo_ev, hi_ev) in rois_list:
+        bin_names = []
+        for (lo_ev, hi_ev, name) in rois_list:
             assert hi_ev > lo_ev
             if len(bin_edges) > 0:
                 assert lo_ev > bin_edges[-1]
             bin_edges.append(lo_ev)
             bin_edges.append(hi_ev)
-        self.rois_bin_edges = np.array(bin_edges)
+            bin_names.append(name)
+        self.rois_bin_edges = bin_edges
+        self.rois_names = bin_names
         print(self.rois_bin_edges)
-    
-    def roi_start_counts(self):
-        """take a timestamp for future reference"""
-        self.roi_counts_start_unixnano = time_unixnano()
-    
+        
     def roi_get_counts(self):
-        """return a list of counts in each ROI since roi_start_counts was called
-        must always call roi_start_counts and roi_get_counts in pairs"""
-        #assert self.roi_counts_start_unixnano is not None, "first call set_rois, then start_rois_counts, roi_start_counts, then roi_get_counts"
+        """return a list of counts in each ROI for the last scan epoch time.
+        Should call after scan_point_end"""
+        # Need to put in TFY-XAS
         last_epoch_idx = len(self.scan.epoch_time_end_s) - 1
         start_unixnano = int(1e9)*self.scan.epoch_time_start_s[last_epoch_idx]
         end_unixnano = int(1e9)*self.scan.epoch_time_end_s[last_epoch_idx]
@@ -295,7 +298,7 @@ class TESScanner():
             return 0
         else:
             bin_centers, counts = self._get_data().histWithUnixnanos(self.rois_bin_edges, "energy", [start_unixnano], [end_unixnano])
-            print(bin_centers, counts)
+            #print(bin_centers, counts)
             return counts[::2]
 
     def scan_start(self, var_name: str, var_unit: str, scan_num: int, sample_id: int, sample_desc: str, extra: dict, drift_correction_plan: str):
@@ -308,7 +311,7 @@ class TESScanner():
         user_output_dir = self._scan_user_output_dir(scan_num, make=False)
         self.scan = DataScan(var_name, var_unit, scan_num, self.beamtime_id, sample_id, 
             sample_desc, extra, data_path,
-                             user_output_dir, drift_correction_plan=drift_correction_plan, cal_number=self.cal_number)
+                             user_output_dir, drift_correction_plan=drift_correction_plan, cal_number=self.cal_number, rois_bin_edges=self.rois_bin_edges, rois_names=self.rois_names)
         self.dastard.set_experiment_state(f"SCAN{scan_num}")
 
     def scan_point_start(self, scan_var: float, extra: dict, _epoch_time_s_for_test=None):
@@ -327,6 +330,7 @@ class TESScanner():
             epoch_time_s = _epoch_time_s_for_test
         self.scan.point_end(epoch_time_s)
 
+
     def scan_end(self, _try_post_processing=True):
         self.state.scan_end()
         self.scan.end()
@@ -338,6 +342,24 @@ class TESScanner():
         self.dastard.set_experiment_state("PAUSE")
         if _try_post_processing:
             self.start_post_processing()
+
+    def quick_post_process(self):
+        assert self.last_scan.rois_bin_edges != [], "rois_bin_edges is None: first call set_rois, then start_rois_counts, roi_start_counts, then roi_get_counts"
+        #a, b = self.roi_counts_start_unixnano, time_unixnano()
+        #self.roi_counts_start_unixnano = None
+        if self.calibration_state == "no_calibration":
+            return 
+        data = self._get_data()
+        bin_edges = self.last_scan.rois_bin_edges
+        print(bin_edges)
+        attr = 'energy'
+        hist2dres = self.last_scan.hist2d(data, bin_edges, attr)
+        hist2d = hist2dres.hist2d
+        roi_counts = hist2d[::2, :]
+        output_dir = self._beamtime_user_output_dir("quick_post_process")
+        output_file = os.path.join(output_dir, f"scan_{self.last_scan.scan_num}")
+        header = " ".join(self.last_scan.rois_names)
+        np.savetxt(output_file, roi_counts.T, header=header, fmt="%d")
         
     def start_post_processing(self, _wait_for_finish=False, _max_channels=10000):
         if self.background_process is not None:

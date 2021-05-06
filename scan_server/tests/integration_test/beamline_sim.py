@@ -64,10 +64,15 @@ def file_start(path='/tmp'):
 def file_end():
     send("file_end")
 
+def quick_post_process():
+    send("quick_post_process")
+    
 def calibration_start(var_name, var_unit, scan_num, sample_id, sample_name, extra={}, routine='ssrl_10_1_mix_cal'):
+    print(f"start calibration scan {scan_num}")
     send("calibration_start", var_name, var_unit, scan_num, sample_id, sample_name, extra, 'none', routine)
     
 def scan_start(var_name, var_unit, scan_num, sample_id, sample_name, extra={}):
+    print(f"start scan {scan_num}")
     send("scan_start", var_name, var_unit, scan_num, sample_id, sample_name, extra, 'none')
 
 def scan_point_start(var_name, extra={}):
@@ -106,7 +111,7 @@ def gscan_grid(gscan_string):
             pos_init = pos_end
     return gscan_grid
     
-def runXAS(gscan_args, counts, repeat=2, time=5):
+def runXAS(gscan_args, counts, repeat=2, time=5, qpp=False):
     global HTXS_GLOBAL
     sum_counts = np.sum(counts)
     tot_time = time*60 #minutes to seconds
@@ -115,7 +120,7 @@ def runXAS(gscan_args, counts, repeat=2, time=5):
     var_name = 'mono'
     var_unit = 'eV'
 
-    roi_set((150, 250), (350, 450))
+    roi_set((150, 250, "test1"), (350, 450, "test2"))
     mono = gscan_grid(gscan_args)
     for n in range(repeat):
         scan_start(var_name, var_unit, HTXS_GLOBAL, sample_id, sample_name, {'pass': n, 'scantype': 'xas'})
@@ -126,6 +131,8 @@ def runXAS(gscan_args, counts, repeat=2, time=5):
             scan_point_end()
             print("ROI Counts", roi_get_counts())
         scan_end()
+        if qpp:
+            quick_post_process()
         HTXS_GLOBAL += 1
 
 def runXES(npts, dwell=1):
@@ -183,7 +190,10 @@ def testXAS(repeat=2, htxs=None):
     runXAS(gscan_args, counts, repeat=repeat, time=3)
     file_stop()
 
-def testROICounts():
+def testROICounts(htxs=None):
+    global HTXS_GLOBAL
+    if htxs is not None:
+        HTXS_GLOBAL = htxs    
     file_start()
     runCal(5, dwell=1)
     calibration_learn_from_last_data()
@@ -191,4 +201,25 @@ def testROICounts():
     grid = gscan_grid(gscan_args)
     counts = np.ones_like(grid)
     runXAS(gscan_args, counts, repeat=2, time=0.5)
+    file_end()
+
+def testQPP(htxs=None):
+    # Should really just nuke beamtime_1
+    global HTXS_GLOBAL
+    if htxs is not None:
+        HTXS_GLOBAL = htxs    
+
+    file_start()
+    runCal(5, dwell=1)
+    calibration_learn_from_last_data()
+    gscan_args = 'mono 700 705 1 1'
+    grid = gscan_grid(gscan_args)
+    counts = np.ones_like(grid)
+    runXAS(gscan_args, counts, repeat=2, time=0.5, qpp=True)
+    file_end()
+    
+def testFileStartStop():
+    file_start()
+    file_end()
+    file_start()
     file_end()
