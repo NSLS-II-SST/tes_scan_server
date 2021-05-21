@@ -246,7 +246,6 @@ class TESScanner():
                                     rois_bin_edges=self.rois_bin_edges, rois_names=self.rois_names)
         self.dastard.set_experiment_state(f"CAL{scan_num}")
         self.cal_number = scan_num
-        
 
 
     def calibration_learn_from_last_data(self):
@@ -264,7 +263,7 @@ class TESScanner():
             self.calibration_state = "calibrated"
         elif self.calibration_state == "calibrated":
             self.calibration_state = "fallback"
-
+        return self.calibration_state
 
     def roi_set(self, rois_list: List):
         """must be alled before other roi functions
