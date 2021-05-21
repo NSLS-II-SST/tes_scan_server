@@ -1,4 +1,5 @@
-from scan_server import TESScanner, FakeDastardClient, rpc_server
+from scan_server import TESScanner, rpc_server
+from scan_server.fake_dastard_client import FakeDastardClient
 import os
 from pathlib import Path
 
@@ -20,7 +21,7 @@ def start():
     no_traceback_error_types = [scan_server.dastard_client.DastardError, statemachine.exceptions.TransitionNotAllowed]
 
     #dastard_listener = DastardListener(dastard_host, dastard_port)
-    dastard = FakeDastardClient()#,
+    dastard = FakeDastardClient(verbose=True)#,
     #pulse_trigger_params = None, noise_trigger_params = None)
     bg_log_file = open(os.path.join(server_log_dir, f"{time_human}_bg.log"), 'a')
     scanner = TESScanner(dastard, beamtime_id, base_user_output_dir, bg_log_file)

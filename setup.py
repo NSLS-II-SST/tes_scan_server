@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'ssrl_10_1_server = scan_server.ssrl_server:start',
+            'tes_sim_server = scan_server.sim_server:start',
             'process_scans = scan_server.post_process:post_process_script'
         ],
     }

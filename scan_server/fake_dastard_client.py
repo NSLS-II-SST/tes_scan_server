@@ -1,5 +1,5 @@
-from rpc_server import get_dispatch_from
-from dastard_client import DastardClient
+from scan_server.rpc_server import get_dispatch_from
+from scan_server.dastard_client import DastardClient
 from os.path import join
 
 def fakeMethodMaker(f):
@@ -19,7 +19,7 @@ class FakeDastardClient():
                 setattr(self.__class__, f, fakeMethodMaker(f))
 
     def start_file(self, ljh22, off, path=None):
-        if verbose: print(f"Method start_file called with {ljh22}, {off}, and path: {path}")
+        if self.verbose: print(f"Method start_file called with {ljh22}, {off}, and path: {path}")
         if path is not None:
             self.off_filename = join(path, "tmp_chan1.off")
         else:
@@ -27,5 +27,5 @@ class FakeDastardClient():
         return self.off_filename
 
     def get_data_path(self):
-        if verbose: print("Method get_data_path called")
+        if self.verbose: print("Method get_data_path called")
         return self.off_filename
