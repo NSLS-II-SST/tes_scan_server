@@ -215,6 +215,7 @@ class TESScanner():
         ljh = False
         off = True
         self.off_filename = self.dastard.start_file(ljh, off, path)
+        return self.off_filename
         # dastard lazily creates off files when it has data to write
         # so we need to wait to open the off files until some time has
         # passed from calling file_start
@@ -312,7 +313,7 @@ class TESScanner():
             sample_desc, extra, data_path,
                              user_output_dir, drift_correction_plan=drift_correction_plan, cal_number=self.cal_number, rois_bin_edges=self.rois_bin_edges, rois_names=self.rois_names)
         self.dastard.set_experiment_state(f"SCAN{scan_num}")
-
+    
     def scan_point_start(self, scan_var: float, extra: dict, _epoch_time_s_for_test=None):
         self.state.scan_point_start()
         if _epoch_time_s_for_test is None:

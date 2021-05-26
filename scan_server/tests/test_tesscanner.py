@@ -61,8 +61,8 @@ def test_tes_scanner():
     scanner.scan_end(_try_post_processing=False)
     scanner.calibration_learn_from_last_data()
     with pytest.raises(AssertionError):
-        scanner.roi_set([(100, 150), (5, 550)]) # 2nd bin starts below first bin
-    scanner.roi_set([(240, 300), (500, 550), (750, 800)])
+        scanner.roi_set([(100, 150, 'roi_a'), (5, 550, 'roi_b')]) # 2nd bin starts below first bin
+    scanner.roi_set([(240, 300, 'roi_a'), (500, 550, 'roi_b'), (750, 800, 'roi_c')])
 
     scanner.scan_start(var_name="mono", var_unit="eV", scan_num=1,  
                 sample_id=0, sample_desc="test_desc", extra = {"tempK":43.2}, 
@@ -97,6 +97,7 @@ def test_tes_scanner():
     # scanner.scan_start_calc_last_outputs()
     result = scanner._get_data().linefit("OKAlpha", attr="energy", plot=False)
     assert result.params["fwhm"].value < 7
+    listener.set_next(topic="WRITING", contents ={"Active":False, "FilenamePattern": util.ssrl_filename_pattern})
     scanner.file_end()
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
         scanner.file_end() # end file while file ended not allowed

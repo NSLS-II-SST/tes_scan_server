@@ -57,9 +57,11 @@ def call_method_from_data(data, dispatch, no_traceback_error_types):
 
 def make_simple_response(_id, method_name, args, result, error):
     if error is not None:
-        response = f"Error: {error}"
+        #response = f"Error: {error}"
+        response = json.dumps({"response": error, "success": False})
     else:
-        response = f"{result}"
+        #response = f"{result}"
+        response = json.dumps({"response": result, "success": True})
     return response
 
 def get_message(sock):

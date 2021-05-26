@@ -72,23 +72,32 @@ def test_with_real_socket():
     client.settimeout(.1)
     client.connect(('localhost', 4000))
     client.send(b"""{"method": "echo", "params": ["yo"]}""")
-    assert client.recv(2**14) == b"yo"
+    r = json.loads(client.recv(2**14).decode())
+    assert r['response'] == 'yo'
     client.send(b"""{"method": "echo", "params": ["yo"], "extra": 4}""")
-    assert client.recv(2**14) == b"yo"
+    r = json.loads(client.recv(2**14).decode())
+    assert r['response'] == 'yo'
     client.send(b"""{"method": "add", "params": [4.2, 5.5]}""")
-    assert client.recv(2**14) == b"9.7"
+    r = json.loads(client.recv(2**14).decode())
+    assert r['response'] == 9.7
     client.send(b"""{"method": "no_args", "params": []}""")
-    assert client.recv(2**14) == b"None"
+    r = json.loads(client.recv(2**14).decode())
+    assert r['response'] == None
     client.send(b"""{"method": "echo", "params": ["yo", "yo"]}""")
-    assert client.recv(2**14) == b"Error: Calling Exception: method=echo: <lambda>() takes 1 positional argument but 2 were given"
+    r = json.loads(client.recv(2**14).decode())
+    assert r['response'] == "Calling Exception: method=echo: <lambda>() takes 1 positional argument but 2 were given"
     client.send(b"""{"method": "faust", "params": []}""")
-    assert client.recv(2**14) == b"Error: Method 'faust' does not exit, valid methods are ['no_args', 'add', 'echo', 'throw_test_error', 'throw_keyboard_interrupt']"
+    r = json.loads(client.recv(2**14).decode())
+    assert r['response'] == "Method 'faust' does not exit, valid methods are ['no_args', 'add', 'echo', 'throw_test_error', 'throw_keyboard_interrupt']"
     client.send(b"""{"method": "throw_test_error", "params": []}""")
-    assert client.recv(2**14) == b'Error: Calling Exception: method=throw_test_error: test error'
+    r = json.loads(client.recv(2**14).decode())
+    assert r['response'] == 'Calling Exception: method=throw_test_error: test error'
     client.send(b"""YO ADRIAN""")
-    assert client.recv(2**14) == b'Error: JSON Parse Exception: Expecting value: line 1 column 1 (char 0)'    
+    r = json.loads(client.recv(2**14).decode())
+    assert r['response'] == 'JSON Parse Exception: Expecting value: line 1 column 1 (char 0)'    
     client.send(b"""{YO, [] ADRIAN}""")
-    assert client.recv(2**14) == b'Error: JSON Parse Exception: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)'
+    r = json.loads(client.recv(2**14).decode())
+    assert r['response'] == 'JSON Parse Exception: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)'
 
     assert server_thread.is_alive()
 
