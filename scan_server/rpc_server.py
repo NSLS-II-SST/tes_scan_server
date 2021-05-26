@@ -96,12 +96,25 @@ def handle_one_message(sock, data, dispatch, verbose, no_traceback_error_types):
         pass
     return t_human, data, response
 
+def make_attribute_accessor(x, a):
+    def get_set_attr(*args):
+        if len(args) == 0:
+            return getattr(x, a)
+        else:
+            old_val = getattr(x, a)
+            setattr(x, a, args[0])
+            return old_val
+
+    return get_set_attr
 
 def get_dispatch_from(x):
     d = collections.OrderedDict()
     for m in sorted(dir(x)):
-        if not m.startswith("_") and callable(getattr(x,m)):
-            d[m] = getattr(x, m)
+        if not m.startswith("_"):
+            if callable(getattr(x,m)):
+                d[m] = getattr(x, m)
+            else:
+                d[m] = make_attribute_accessor(x, m)
     return d
 
 # def make_log_func():

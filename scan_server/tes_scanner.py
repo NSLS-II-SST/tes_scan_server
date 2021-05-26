@@ -187,35 +187,32 @@ class ScannerState(StateMachine):
 class TESScanner():
     """talks to dastard and mass"""
     def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str, background_process_log_file):
-        self.dastard = dastard
+        self._dastard = dastard
         self.beamtime_id = beamtime_id
         self.base_user_output_dir = base_user_output_dir
-        self.state: ScannerState = ScannerState()
+        self._state: ScannerState = ScannerState()
         self._reset()
         self.background_process = None # dont put this in _reset, we want it to persist over reset
         self.background_process_log_file = background_process_log_file
 
 
     def _reset(self):
-        self.last_scan = None
-        self.scan = None
+        self._last_scan = None
+        self._scan = None
         self._data = None
-        self.roi_counts_start_unixnano = None
-        self.rois_bin_edges = None
-        self.rois_names = None
+        self.roi = None
         self.calibration_to_routine: List[str] = [] 
         self.calibration_state = "no_calibration"
         self.cal_number: int = -1
-        self.calibration_log = None
-        self.off_filename = None
+        self._off_filename = None
 
     def file_start(self, path=None):
         """tell dastard to start a new file, must be called before any calibration or scan functions"""
-        self.state.file_start()
+        self._state.file_start()
         ljh = False
         off = True
-        self.off_filename = self.dastard.start_file(ljh, off, path)
-        return self.off_filename
+        self._off_filename = self._dastard.start_file(ljh, off, path)
+        return self._off_filename
         # dastard lazily creates off files when it has data to write
         # so we need to wait to open the off files until some time has
         # passed from calling file_start
@@ -234,18 +231,18 @@ class TESScanner():
         sample_desc: str - for your reference
         routine: str - which function is used to generate calibration curves from the data
         """
-        self.state.scan_start()
+        self._state.scan_start()
         # self.set_pulse_triggers()
 
         self.calibration_to_routine.append(routine)
-        data_path = self.dastard.get_data_path()
+        data_path = self._dastard.get_data_path()
         self._validate_drift_correction_plan(drift_correction_plan)
         user_output_dir = self._scan_user_output_dir(scan_num, make=False)
-        self.scan = CalibrationScan(var_name, var_unit, scan_num, self.beamtime_id, sample_id, 
+        self._scan = CalibrationScan(var_name, var_unit, scan_num, self.beamtime_id, sample_id, 
                                     sample_desc, extra, data_path, user_output_dir,
                                     drift_correction_plan, routine=routine,
                                     rois_bin_edges=self.rois_bin_edges, rois_names=self.rois_names)
-        self.dastard.set_experiment_state(f"CAL{scan_num}")
+        self._dastard.set_experiment_state(f"CAL{scan_num}")
         self.cal_number = scan_num
 
 
@@ -266,99 +263,109 @@ class TESScanner():
             self.calibration_state = "fallback"
         return self.calibration_state
 
-    def roi_set(self, rois_list: List):
-        """must be alled before other roi functions
-        rois_list: a list of (lo, hi, name) energy pairs in eV, each pair specifies a region of interest""" 
-        # roi list is a a list of pairs of lo, hi energy pairs
-        assert len(rois_list) > 0
-        bin_edges = []
-        bin_names = []
-        for (lo_ev, hi_ev, name) in rois_list:
-            assert hi_ev > lo_ev
-            if len(bin_edges) > 0:
-                assert lo_ev > bin_edges[-1]
-            bin_edges.append(lo_ev)
-            bin_edges.append(hi_ev)
-            bin_names.append(name)
-        self.rois_bin_edges = bin_edges
-        self.rois_names = bin_names
-        print(self.rois_bin_edges)
+    @property
+    def state(self):
+        return self._state.current_state_value
+    
+    @property
+    def filename(self):
+        return self._off_filename
         
+    @property
+    def roi(self):
+        return self._roi
+
+    @roi.setter
+    def roi(self, roi_dict):
+        """must be alled before other roi functions
+        rois_list: a dictinary of {name: (lo, hi), ...} energy pairs in eV, each pair specifies a region of interest""" 
+        # roi list is a a list of pairs of lo, hi energy pairs
+        if roi_dict is None or len(roi_dict) == 0:
+            self._roi = None
+            return
+        else:
+            for (lo_ev, hi_ev) in roi_dict.values():
+                assert hi_ev > lo_ev
+            self._roi = roi_dict
+    
     def roi_get_counts(self):
         """return a list of counts in each ROI for the last scan epoch time.
         Should call after scan_point_end"""
         # Need to put in TFY-XAS
-        last_epoch_idx = len(self.scan.epoch_time_end_s) - 1
-        start_unixnano = int(1e9)*self.scan.epoch_time_start_s[last_epoch_idx]
-        end_unixnano = int(1e9)*self.scan.epoch_time_end_s[last_epoch_idx]
-        assert self.rois_bin_edges is not None, "rois_bin_edges is None: first call set_rois, then start_rois_counts, roi_start_counts, then roi_get_counts"
+        last_epoch_idx = len(self._scan.epoch_time_end_s) - 1
+        start_unixnano = int(1e9)*self._scan.epoch_time_start_s[last_epoch_idx]
+        end_unixnano = int(1e9)*self._scan.epoch_time_end_s[last_epoch_idx]
+        assert self.rois is not None, "rois_bin_edges is None: first call set_rois"
         #a, b = self.roi_counts_start_unixnano, time_unixnano()
         #self.roi_counts_start_unixnano = None
         if self.calibration_state == "no_calibration":
             return 0
         else:
-            bin_centers, counts = self._get_data().histWithUnixnanos(self.rois_bin_edges, "energy", [start_unixnano], [end_unixnano])
+            roi_counts = {}
+            for name, (lo_ev, hi_ev) in self.rois:
+                bin_centers, counts = self._get_data().histWithUnixnanos([lo_ev, hi_ev], "energy", [start_unixnano], [end_unixnano])
+                roi_counts[name] = counts[0]
             #print(bin_centers, counts)
-            return counts[::2]
+            return roi_counts
 
     def scan_start(self, var_name: str, var_unit: str, scan_num: int, sample_id: int, sample_desc: str, extra: dict, drift_correction_plan: str):
         assert isinstance(scan_num, int)
         for fname in self._log_filenames("scan", scan_num):
             assert not os.path.isfile(fname)
-        self.state.scan_start()
-        data_path = self.dastard.get_data_path()
+        self._state.scan_start()
+        data_path = self._dastard.get_data_path()
         self._validate_drift_correction_plan(drift_correction_plan)
         user_output_dir = self._scan_user_output_dir(scan_num, make=False)
-        self.scan = DataScan(var_name, var_unit, scan_num, self.beamtime_id, sample_id, 
+        self._scan = DataScan(var_name, var_unit, scan_num, self.beamtime_id, sample_id, 
             sample_desc, extra, data_path,
                              user_output_dir, drift_correction_plan=drift_correction_plan, cal_number=self.cal_number, rois_bin_edges=self.rois_bin_edges, rois_names=self.rois_names)
-        self.dastard.set_experiment_state(f"SCAN{scan_num}")
+        self._dastard.set_experiment_state(f"SCAN{scan_num}")
     
     def scan_point_start(self, scan_var: float, extra: dict, _epoch_time_s_for_test=None):
-        self.state.scan_point_start()
+        self._state.scan_point_start()
         if _epoch_time_s_for_test is None:
             epoch_time_s = time.time()
         else:
             epoch_time_s = _epoch_time_s_for_test
-        self.scan.point_start(scan_var, epoch_time_s, extra)
+        self._scan.point_start(scan_var, epoch_time_s, extra)
 
     def scan_point_end(self, _epoch_time_s_for_test=None):
-        self.state.scan_point_end()
+        self._state.scan_point_end()
         if _epoch_time_s_for_test is None:
             epoch_time_s = time.time()
         else:
             epoch_time_s = _epoch_time_s_for_test
-        self.scan.point_end(epoch_time_s)
+        self._scan.point_end(epoch_time_s)
 
 
     def scan_end(self, _try_post_processing=True):
-        self.state.scan_end()
-        self.scan.end()
-        scan_name = "calibration" if self.scan.calibration else "scan"
-        for fname in self._log_filenames(scan_name, self.scan.scan_num):
-            self.scan.to_disk(fname)
-        self.last_scan = self.scan
-        self.scan = None
-        self.dastard.set_experiment_state("PAUSE")
+        self._state.scan_end()
+        self._scan.end()
+        scan_name = "calibration" if self._scan.calibration else "scan"
+        for fname in self._log_filenames(scan_name, self._scan.scan_num):
+            self._scan.to_disk(fname)
+        self._last_scan = self._scan
+        self._scan = None
+        self._dastard.set_experiment_state("PAUSE")
         if _try_post_processing:
             self.start_post_processing()
 
     def quick_post_process(self):
-        assert self.last_scan.rois_bin_edges != [], "rois_bin_edges is None: first call set_rois, then start_rois_counts, roi_start_counts, then roi_get_counts"
+        assert self._last_scan.rois_bin_edges != [], "rois_bin_edges is None: first call set_rois, then start_rois_counts, roi_start_counts, then roi_get_counts"
         #a, b = self.roi_counts_start_unixnano, time_unixnano()
         #self.roi_counts_start_unixnano = None
         if self.calibration_state == "no_calibration":
             return 
         data = self._get_data()
-        bin_edges = self.last_scan.rois_bin_edges
+        bin_edges = self._last_scan.rois_bin_edges
         print(bin_edges)
         attr = 'energy'
-        hist2dres = self.last_scan.hist2d(data, bin_edges, attr)
+        hist2dres = self._last_scan.hist2d(data, bin_edges, attr)
         hist2d = hist2dres.hist2d
         roi_counts = hist2d[::2, :]
         output_dir = self._beamtime_user_output_dir("quick_post_process")
-        output_file = os.path.join(output_dir, f"scan_{self.last_scan.scan_num}")
-        header = " ".join(self.last_scan.rois_names)
+        output_file = os.path.join(output_dir, f"scan_{self._last_scan.scan_num}")
+        header = " ".join(self._last_scan.rois_names)
         np.savetxt(output_file, roi_counts.T, header=header, fmt="%d")
         
     def start_post_processing(self, _wait_for_finish=False, _max_channels=10000):
@@ -377,8 +384,8 @@ class TESScanner():
         return "started new process"
 
     def file_end(self):
-        self.state.file_end()
-        self.dastard.stop_writing()
+        self._state.file_end()
+        self._dastard.stop_writing()
         self._reset()
     
     def _beamtime_user_output_dir(self, subdir = None, make = True):
