@@ -21,7 +21,10 @@ class FakeDastardClient():
     def start_file(self, ljh22, off, path=None):
         if self.verbose: print(f"Method start_file called with {ljh22}, {off}, and path: {path}")
         if path is not None:
-            self.off_filename = join(path, "tmp_chan1.off")
+            if ".off" not in path:
+                self.off_filename = join(path, "tmp_chan1.off")
+            else:
+                self.off_filename = path
         else:
             self.off_filename = join("/tmp", "tmp_chan1.off")
         return self.off_filename

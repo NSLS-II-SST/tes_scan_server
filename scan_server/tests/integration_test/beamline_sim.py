@@ -42,53 +42,53 @@ def sendrcv(method, *params):
     s.close()
     
 def take_noise():
-    send('start_noise')
+    sendrcv('start_noise')
 
 def take_filters(name="mixv3", sid=101, htxs_date=None):
     if htxs_date is None:
         htxs_date = datetime.date.today().strftime("%Y%m%d")
-    send({"func": "set_htxs", "args": [htxs_date]})
+    sendrcv({"func": "set_htxs", "args": [htxs_date]})
     msg = {"func": "start_cal", "kwargs": {"sample_name": name, "sample_id": sid}}
-    send(msg)
-    send({"func": "set_cal"})
+    sendrcv(msg)
+    sendrcv({"func": "set_cal"})
          
 def projectors():
-    send({"func": "createProjectors"})
+    return sendrcv({"func": "createProjectors"})
 
 def startSimPulses(amps=[8488, 7050, 6148, 5244, 3922, 2782]):
-    send({"func": "publish", "args":["dastard"], "kwargs":{"func":"startSimPulses", "args":[amps]}})
+    return sendrcv({"func": "publish", "args":["dastard"], "kwargs":{"func":"startSimPulses", "args":[amps]}})
 
 def file_start(path='/tmp'):
-    send("file_start", path)
+    return sendrcv("file_start", path)
 
 def file_end():
-    send("file_end")
+    return sendrcv("file_end")
 
 def quick_post_process():
-    send("quick_post_process")
+    return sendrcv("quick_post_process")
     
 def calibration_start(var_name, var_unit, scan_num, sample_id, sample_name, extra={}, routine='ssrl_10_1_mix_cal'):
     print(f"start calibration scan {scan_num}")
-    send("calibration_start", var_name, var_unit, scan_num, sample_id, sample_name, extra, 'none', routine)
+    return sendrcv("calibration_start", var_name, var_unit, scan_num, sample_id, sample_name, extra, 'none', routine)
     
 def scan_start(var_name, var_unit, scan_num, sample_id, sample_name, extra={}):
     print(f"start scan {scan_num}")
-    send("scan_start", var_name, var_unit, scan_num, sample_id, sample_name, extra, 'none')
+    return sendrcv("scan_start", var_name, var_unit, scan_num, sample_id, sample_name, extra, 'none')
 
-def scan_point_start(var_name, extra={}):
-    send("scan_point_start", var_name, extra)
+def scan_point_start(var_value, extra={}, timestamp=None):
+    return sendrcv("scan_point_start", var_value, extra, timestamp)
 
-def scan_point_end():
-    send("scan_point_end")
+def scan_point_end(timestamp=None):
+    return sendrcv("scan_point_end", timestamp)
 
 def scan_end(try_post_processing=False):
-    send("scan_end", try_post_processing)
+    return sendrcv("scan_end", try_post_processing)
 
 def calibration_learn_from_last_data():
-    send("calibration_learn_from_last_data")
+    return sendrcv("calibration_learn_from_last_data")
 
 def roi_set(*args):
-    send("roi_set", args)
+    return sendrcv("roi_set", args)
 
 def roi_get_counts():
     return sendrcv("roi_get_counts")
@@ -135,6 +135,28 @@ def runXAS(gscan_args, counts, repeat=2, time=5, qpp=False):
             quick_post_process()
         HTXS_GLOBAL += 1
 
+def runXASFromLog(log, dwell=0.1, qpp=True):
+    global HTXS_GLOBAL
+    header = log[0]
+    data_list = log[1:]
+    sample_name = header['sample']
+    sample_id = header['load_id']
+    var_name = header['motor']
+    var_unit = 'eV'
+
+    for data in data_list:
+        npass = data['header']['pass']
+        scan_start(var_name, var_unit, HTXS_GLOBAL, sample_id, sample_name, {'pass': npass, 'scantype': 'xas'})
+        for m, (ts1, ts2) in data[var_name].items():
+            scan_point_start(m, {}, ts1)
+            sleep(dwell)
+            scan_point_end(ts2)
+            sendrcv("roi_save_counts")
+        scan_end()
+        if qpp:
+            quick_post_process()
+        HTXS_GLOBAL += 1
+    
 def runXES(npts, dwell=1):
     global HTXS_GLOBAL
     sample_name = 'sample'
@@ -166,6 +188,24 @@ def runCal(npts, dwell=1.0):
     scan_end()
     HTXS_GLOBAL += 1
 
+def runCalFromLog(log, dwell=0.1):
+    global HTXS_GLOBAL
+    header = log[0]
+    data = log[1]
+    points = data['loop']
+
+    sample_name = header['sample']
+    sample_id = header['load_id']
+    var_name = 'time'
+    var_unit = 'seconds'
+    calibration_start(var_name, var_unit, HTXS_GLOBAL, sample_id, sample_name, {}, 'ssrl_10_1_mix_cal')
+    for p, (t1, t2) in points.items():
+        scan_point_start(p, {}, t1)
+        sleep(dwell)
+        scan_point_end(t2)
+    scan_end()
+    HTXS_GLOBAL += 1
+    
 def testRun(htxs=None):
     global HTXS_GLOBAL
     if htxs is not None:
