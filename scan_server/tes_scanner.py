@@ -222,12 +222,14 @@ class TESScanner():
     def filename(self):
         return self._off_filename
         
-    @property
-    def roi(self):
-        return self._roi
 
-    @roi.setter
-    def roi(self, roi_dict):
+    def roi_get(self, key=None):
+        if key is None:
+            return self._roi
+        else:
+            return self._roi.get(key, None)
+
+    def roi_set(self, roi_dict):
         """must be alled before other roi functions
         rois_list: a dictinary of {name: (lo, hi), ...} energy pairs in eV, each pair specifies a region of interest""" 
         # roi list is a a list of pairs of lo, hi energy pairs
@@ -235,11 +237,14 @@ class TESScanner():
             self._roi = {"tfy": (self.tfy_llim, self.tfy_ulim)}
             return
         else:
-            self._roi = {"tfy": (self.tfy_llim, self.tfy_ulim)}
-            for (lo_ev, hi_ev) in roi_dict.values():
+            for key, (lo_ev, hi_ev) in roi_dict.items():
+                if lo_ev is None or hi_ev is None:
+                    self._roi.pop(key, None)
+                    roi_dict.pop(key, None)
                 assert hi_ev > lo_ev
             self._roi.update(roi_dict)
-
+            return
+        
     @property
     def scan_num(self):
         if self._scan_num is None:
