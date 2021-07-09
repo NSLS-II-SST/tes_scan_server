@@ -23,25 +23,22 @@ def call_method_from_data(data, dispatch, no_traceback_error_types):
     try:
         d = json.loads(data)
     except Exception as e:
-        return None, None, None, None, f"JSON Parse Exception: {e}"
+        return None, None, None, None, None, f"JSON Parse Exception: {e}"
     _id = d.get("id", -1)
     if "method" not in d.keys():
-        return _id, None, None, None, f"method key does not exist"
+        return _id, None, None, None, None, f"method key does not exist"
     method_name = d["method"]
-    if "params" not in d.keys():
-        args = []
-        #return _id, method_name, None, None, f"params key does not exist"
-    else:
-        args = d["params"]
+    args = d.get('params', [])
+    kwargs = d.get('kwargs', {})
     if method_name not in dispatch.keys():
-        return _id, method_name, args, None, f"Method '{method_name}' does not exit, valid methods are {list(dispatch.keys())}"
+        return _id, method_name, args, kwargs, None, f"Method '{method_name}' does not exit, valid methods are {list(dispatch.keys())}"
     method = dispatch[method_name]
     if not isinstance(args, list):
-        return _id, method_name, args, None, f"args must be a list, instead it is {args}"
+        return _id, method_name, args, kwargs, None, f"args must be a list, instead it is {args}"
 
     try:
-        result = method(*args)
-        return _id, method_name, args, result, None
+        result = method(*args, **kwargs)
+        return _id, method_name, args, kwargs, result, None
     except Exception as e:
         if isinstance(e, KeyboardInterrupt):
             raise e
@@ -53,9 +50,9 @@ def call_method_from_data(data, dispatch, no_traceback_error_types):
             print("TRACEBACK")
             print("".join(s))
             print("TRACEBACK DONE")
-        return _id, method_name, args, None, f"Calling Exception: method={method_name}: {e}"
+        return _id, method_name, args, kwargs, None, f"Calling Exception: method={method_name}: {e}"
 
-def make_simple_response(_id, method_name, args, result, error):
+def make_simple_response(_id, method_name, args, kwargs, result, error):
     if error is not None:
         #response = f"Error: {error}"
         response = json.dumps({"response": error, "success": False})
@@ -82,10 +79,10 @@ def handle_one_message(sock, data, dispatch, verbose, no_traceback_error_types):
     if verbose:
         print(f"{t_human}")
         print(f"got: {data}")
-    _id, method_name, args, result, error = call_method_from_data(data, dispatch, no_traceback_error_types)
+    _id, method_name, args, kwargs, result, error = call_method_from_data(data, dispatch, no_traceback_error_types)
     # if verbose:
     #     print(f"id: {_id}, method_name: {method_name}, args: {args}, result: {result}, error: {error}")
-    response = make_simple_response(_id, method_name, args, result, error).encode()
+    response = make_simple_response(_id, method_name, args, kwargs, result, error).encode()
     if verbose:
         print(f"responded: {response}")
     try:

@@ -42,9 +42,10 @@ class BaseScan():
     def point_start(self, scan_var, epoch_time_s, extra=None):
         assert not self._ended
         assert len(self.epoch_time_start_s) == len(self.epoch_time_end_s)
-        assert isinstance(extra, dict)
+
         self.var_values.append(float(scan_var))
         if extra is not None and extra != {}:
+            assert isinstance(extra, dict)
             idx = str(len(self.epoch_time_start_s))
             self.point_extras[idx] = extra
         self.epoch_time_start_s.append(epoch_time_s)
@@ -204,7 +205,7 @@ class TESScanner():
         self._last_scan = None
         self._scan = None
         self._data = None
-        self.roi = None
+        self._roi = {"tfy": (self.tfy_llim, self.tfy_ulim)}
         self._scan_num = None
         self.overwrite = False
         self.calibration_to_routine: List[str] = [] 
@@ -222,7 +223,6 @@ class TESScanner():
     def filename(self):
         return self._off_filename
         
-
     def roi_get(self, key=None):
         if key is None:
             return self._roi
@@ -230,18 +230,24 @@ class TESScanner():
             return self._roi.get(key, None)
 
     def roi_set(self, roi_dict):
-        """must be alled before other roi functions
-        rois_list: a dictinary of {name: (lo, hi), ...} energy pairs in eV, each pair specifies a region of interest""" 
+        """
+        must be called before other roi functions
+        roi_dict: a dictinary of {name: (lo, hi), ...} energy pairs in eV, each pair specifies a region of interest
+        if roi_dict is none, reset ROIs to just tfy
+        """ 
         # roi list is a a list of pairs of lo, hi energy pairs
         if roi_dict is None or len(roi_dict) == 0:
             self._roi = {"tfy": (self.tfy_llim, self.tfy_ulim)}
             return
         else:
-            for key, (lo_ev, hi_ev) in roi_dict.items():
+            keys = list(roi_dict.keys())
+            for key in keys:
+                (lo_ev, hi_ev) = roi_dict.get(key, (None, None))
                 if lo_ev is None or hi_ev is None:
                     self._roi.pop(key, None)
                     roi_dict.pop(key, None)
-                assert hi_ev > lo_ev
+                else:
+                    assert hi_ev > lo_ev
             self._roi.update(roi_dict)
             return
         
@@ -251,6 +257,11 @@ class TESScanner():
             self._scan_num = self._get_current_scan_num_from_logs()    
         return self._scan_num        
 
+    @scan_num.setter
+    def scan_num(self, scan_num):
+        self._scan_num = scan_num
+        return self._scan_num
+        
     @property
     def next_scan_num(self):
         return self.scan_num + 1
@@ -278,37 +289,33 @@ class TESScanner():
         self._reset()
 
     # Scan operations
-    def scan_start(self, var_name: str, var_unit: str, scan_num: int, sample_id: int, sample_desc: str, extra: dict, drift_correction_plan: str):
-        
+    def scan_start(self, var_name: str, var_unit: str, scan_num: int, sample_id: int, sample_desc: str, extra: dict = {}, drift_correction_plan: str = 'none'):       
         self._state.scan_start()
         scan_num = self.scan_num
         for fname in self._log_filenames("scan", scan_num):
-            assert not os.path.isfile(fname)
+            if not self.overwrite:
+                assert not os.path.isfile(fname)
         data_path = self._dastard.get_data_path()
         self._validate_drift_correction_plan(drift_correction_plan)
         self._scan = DataScan(var_name, var_unit, scan_num, self.beamtime_id, sample_id, 
             sample_desc, extra, data_path, drift_correction_plan=drift_correction_plan,
-            cal_number=self.cal_number, roi=self.roi)
+            cal_number=self.cal_number, roi=self._roi)
         self._dastard.set_experiment_state(f"SCAN{scan_num}")
 
         
-    def scan_point_start(self, scan_var: float, extra: dict, _epoch_time_s_for_test=None):
+    def scan_point_start(self, scan_var: float, epoch_time_s=None, extra: dict=None):
         self._state.scan_point_start()
-        if _epoch_time_s_for_test is None:
+        if epoch_time_s is None:
             epoch_time_s = time.time()
-        else:
-            epoch_time_s = _epoch_time_s_for_test
         self._scan.point_start(scan_var, epoch_time_s, extra)
 
-    def scan_point_end(self, _epoch_time_s_for_test=None):
+    def scan_point_end(self, epoch_time_s=None):
         self._state.scan_point_end()
-        if _epoch_time_s_for_test is None:
+        if epoch_time_s is None:
             epoch_time_s = time.time()
-        else:
-            epoch_time_s = _epoch_time_s_for_test
         self._scan.point_end(epoch_time_s)
 
-    def scan_end(self, _try_post_processing=True):
+    def scan_end(self, _try_post_processing=False):
         self._state.scan_end()
         self._scan.end()
         scan_name = "calibration" if self._scan.calibration else "scan"
@@ -322,7 +329,7 @@ class TESScanner():
             self.start_post_processing()
 
     # Calibration Functions
-    def calibration_start(self, var_name: str, var_unit: str, scan_num: int, sample_id: int, sample_desc: str, extra: dict, drift_correction_plan: str, routine: str):
+    def calibration_start(self, var_name: str, var_unit: str, scan_num: int, sample_id: int, sample_desc: str, routine: str, extra: dict ={}, drift_correction_plan: str ='none'):
         """start taking calibraion data, ensure the appropriate x-rays are incident on the detector
         sample_id: int - for your reference
         sample_desc: str - for your reference
@@ -338,7 +345,7 @@ class TESScanner():
         self._scan = CalibrationScan(var_name, var_unit, scan_num, self.beamtime_id, sample_id, 
                                     sample_desc, extra, data_path, 
                                     drift_correction_plan, routine=routine,
-                                    roi=self.roi)
+                                    roi=self._roi)
         self._dastard.set_experiment_state(f"CAL{scan_num}")
         self.cal_number = scan_num
         
@@ -382,7 +389,7 @@ class TESScanner():
             bin_centers, counts = self._get_data().histWithUnixnanos([10, 20000], "filtValue", [start_unixnano], [end_unixnano])
             roi_counts['tfy'] = int(counts[0])
         else:
-            for name, (lo_ev, hi_ev) in self.roi.items():
+            for name, (lo_ev, hi_ev) in self._roi.items():
                 bin_centers, counts = self._get_data().histWithUnixnanos([lo_ev, hi_ev], "energy", [start_unixnano], [end_unixnano])
                 roi_counts[name] = int(counts[0])
             #print(bin_centers, counts)
@@ -390,8 +397,7 @@ class TESScanner():
 
     def roi_save_counts(self):
         roi_counts = self.roi_get_counts()
-        output_dir = self._beamtime_user_output_dir("pfy")
-        output_file = os.path.join(output_dir, f"scan_{self._scan.scan_num}")
+        output_file = self.get_pfy_output_file(make=True)
         roi_names = roi_counts.keys()
         data = np.array([roi_counts[name] for name in roi_names])
         header = " ".join(roi_names)
@@ -403,7 +409,12 @@ class TESScanner():
             with open(output_file, "a") as f:
                 np.savetxt(f, data[np.newaxis, :])
         return roi_counts        
-        
+
+    def get_pfy_output_file(self, make=False):
+        output_dir = self._beamtime_user_output_dir("pfy", make=make)
+        output_file = os.path.join(output_dir, f"scan_{self.scan_num}")
+        return output_file
+    
     def quick_post_process(self):
         """
         Will be broken right now due to ROI changes

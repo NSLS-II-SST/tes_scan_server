@@ -69,14 +69,14 @@ def quick_post_process():
     
 def calibration_start(var_name, var_unit, scan_num, sample_id, sample_name, extra={}, routine='ssrl_10_1_mix_cal'):
     print(f"start calibration scan {scan_num}")
-    return sendrcv("calibration_start", var_name, var_unit, scan_num, sample_id, sample_name, extra, 'none', routine)
+    return sendrcv("calibration_start", var_name, var_unit, scan_num, sample_id, sample_name, routine, extra, 'none')
     
 def scan_start(var_name, var_unit, scan_num, sample_id, sample_name, extra={}):
     print(f"start scan {scan_num}")
     return sendrcv("scan_start", var_name, var_unit, scan_num, sample_id, sample_name, extra, 'none')
 
 def scan_point_start(var_value, extra={}, timestamp=None):
-    return sendrcv("scan_point_start", var_value, extra, timestamp)
+    return sendrcv("scan_point_start", var_value, timestamp, extra)
 
 def scan_point_end(timestamp=None):
     return sendrcv("scan_point_end", timestamp)
