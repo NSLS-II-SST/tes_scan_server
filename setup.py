@@ -9,7 +9,7 @@ setup(
     author_email='galen.oneil@nist.gov',
     python_requires='>=3.5',
     description="ScanServer helps automate synchrotron beamlines with a TES",
-    install_requires=["python-statemachine", "pytest", "requests", "numpy", "pyyaml",
+    install_requires=["python-statemachine", "pytest", "numpy", "pyyaml",
     "dataclasses_json", "pytest-dependency", "argparse",
     "mass @ git+ssh://git@bitbucket.org/joe_fowler/mass.git@master#egg=mass", "zmq"],
     license="MIT license",
