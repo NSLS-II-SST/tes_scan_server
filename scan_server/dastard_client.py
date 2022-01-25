@@ -3,6 +3,10 @@ import itertools
 import zmq
 import socket
 import collections
+from collections import OrderedDict
+import h5py
+from dastardcommander.projectors import toMatBase64
+
 
 class DastardListener():
     def __init__(self, host, port):
@@ -150,3 +154,54 @@ class DastardClient():
     def get_data_path(self):
         return self.off_filename
 
+    def set_projectors(self, projector_filename):
+        config = getProjectorConfig(projector_filename)
+        response = self._call("SourceControl.ConfigureProjectorsBasis", config)
+
+def getProjectorConfig(filename):
+    print("YOYOYOYO")
+    return "YOYOYYO"
+
+def getProjectorConfig__real(filename, channels_per_pixel=1):
+    """
+    returns an OrderedDict mapping channel number to a dict for use in calling
+    self.client.call("SourceControl.ConfigureProjectorsBasis", config)
+    to set Projectors and Bases
+    extracts the channel numbers and projectors and basis from the h5 file
+    filename - points to a _model.hdf5 file created by Pope
+
+    channels_per_pixel = 2 for tdm (chan + err)
+    channels_per_piexel = 1 for simulated pulse source or abaco
+    """
+    out = OrderedDict()
+    h5 = h5py.File(filename, "r")
+    for key in list(h5.keys()):
+        nameNumber = int(key)
+        channelIndex = (nameNumber)*channels_per_pixel
+        projectors = h5[key]["svdbasis"]["projectors"][()]
+        basis = h5[key]["svdbasis"]["basis"][()]
+        rows, cols = projectors.shape
+        # projectors has size (n,z) where it is (rows,cols)
+        # basis has size (z,n)
+        # coefs has size (n,1)
+        # coefs (n,1) = projectors (n,z) * data (z,1)
+        # modelData (z,1) = basis (z,n) * coefs (n,1)
+        # n = number of basis (eg 3)
+        # z = record length (eg 4)
+        nBasis = rows
+        recordLength = cols
+        if nBasis > recordLength:
+            print("projectors transposed for dastard, fix projector maker")
+            config = {
+                "ChannelIndex": channelIndex,
+                "ProjectorsBase64": toMatBase64(projectors.T)[0],
+                "BasisBase64": toMatBase64(basis.T)[0],
+            }
+        else:
+            config = {
+                "ChannelIndex": channelIndex,
+                "ProjectorsBase64": toMatBase64(projectors)[0],
+                "BasisBase64": toMatBase64(basis)[0],
+            }
+        out[nameNumber] = config
+    return out

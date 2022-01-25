@@ -10,7 +10,7 @@ import statemachine
 
 def start():
     beamtime_id = 1
-    base_user_output_dir = os.path.expanduser("~/data")
+    base_user_output_dir = os.path.expanduser("~/userout")
     server_log_dir = os.path.expanduser("~/.scan_server")
     Path(server_log_dir).mkdir(parents=True, exist_ok=True)
     dastard_host = "localhost"

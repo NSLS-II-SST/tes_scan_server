@@ -20,6 +20,7 @@ from glob import glob
 
 
 
+
 @dataclass_json
 @dataclass
 class BaseScan():
@@ -291,6 +292,9 @@ class TESScanner():
         self._dastard.stop_writing()
         self._state.file_end()
         self._reset()
+
+    def set_projectors(self, projector_filename):
+        self._dastard.set_projectors(projector_filename)
 
     # Scan operations
     def scan_start(self, var_name: str, var_unit: str, scan_num: int, sample_id: int, sample_desc: str, extra: dict = {}, drift_correction_plan: str = 'none'):       
