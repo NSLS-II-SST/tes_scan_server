@@ -189,9 +189,11 @@ class ScannerState(StateMachine):
 
 class TESScanner():
     """talks to dastard and mass"""
-    def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str, background_process_log_file):
+    def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str, background_process_log_file, write_ljh=False, write_off=True):
         self._dastard = dastard
         self.beamtime_id = beamtime_id
+        self.write_ljh = write_ljh
+        self.write_off = write_off
         self.base_user_output_dir = base_user_output_dir
         self._state: ScannerState = ScannerState()
         self.tfy_ulim = 1600
@@ -271,12 +273,14 @@ class TESScanner():
         return self._scan_num
     
     # Dastard operations
-    def file_start(self, path=None):
+    def file_start(self, path=None, write_ljh=None, write_off=None):
         """tell dastard to start a new file, must be called before any calibration or scan functions"""
+        if write_ljh is None:
+            write_ljh = self.write_ljh
+        if write_off is None:
+            write_off = self.write_off
+        self._off_filename = self._dastard.start_file(write_ljh, write_off, path)
         self._state.file_start()
-        ljh = False
-        off = True
-        self._off_filename = self._dastard.start_file(ljh, off, path)
         return self._off_filename
         # dastard lazily creates off files when it has data to write
         # so we need to wait to open the off files until some time has
@@ -284,8 +288,8 @@ class TESScanner():
         # so we must always access through _get_data (_hides it from the rpc)
 
     def file_end(self):
-        self._state.file_end()
         self._dastard.stop_writing()
+        self._state.file_end()
         self._reset()
 
     # Scan operations

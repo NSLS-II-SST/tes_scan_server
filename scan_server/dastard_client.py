@@ -41,6 +41,7 @@ class DastardListener():
             if topic == target_topic:
                 if not isinstance(contents, dict):
                     raise DastardError(f"contents should be a dict, is a {type(contents)}. contents={contents}")
+                print(f"Got msg with Topic: {topic}, Contents: {contents}")
                 return contents
 
 
@@ -100,7 +101,7 @@ class DastardClient():
         response = self._call("SourceControl.WriteControl", params)
         contents = self.listener.get_message_with_topic("WRITING")
         if not contents["Active"]:
-            raise DastardError(f"Response from Dastard RPC should have contents[\"Active\"]=True, but it does not\nconents:\n{contents}")
+            raise DastardError(f"Response from Dastard RPC should have contents[\"Active\"]=True, but it does not\ncontents:\n{contents}")
         self.off_filename = contents["FilenamePattern"]%("chan1","off")
         return self.off_filename
 
@@ -138,7 +139,8 @@ class DastardClient():
     def stop_writing(self):
         params = {"Request": "Stop"}
         response = self._call("SourceControl.WriteControl", params)
-        contents = self.listener.get_message_with_topic("WRITING")
+        contents = self.listener.get_message_with_topic("WRITING") 
+ 
 
     def configure_record_lengths(self, npre, nsamp):
         params = {"Nsamp": nsamp,
