@@ -43,7 +43,7 @@ def test_analysis():
     # plt.pause(10)
 
     line_names = ["CKAlpha", "NKAlpha", "OKAlpha", "FeLAlpha", "NiLAlpha", "CuLAlpha"]
-    ds.learnCalibrationPlanFromEnergiesAndPeaks(attr="filtValue", states="CAL0", ph_fwhm=30, line_names=line_names)
+    ds.learnCalibrationPlanFromEnergiesAndPeaks(attr="filtValue", states="CAL0", ph_fwhm=30, line_names=line_names, maxacc=0.1)
     assert list(ds.calibrationPlan.uncalibratedVals) == [4363.981866173563, 5985.5503863614285, 7792.096878078883, 10043.34331879334, 11737.72002893791, 12585.177247340907]
 
     for ds in data.values()[1:]:

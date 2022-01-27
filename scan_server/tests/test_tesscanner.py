@@ -1,4 +1,5 @@
 from scan_server import TESScanner, DataScan, CalibrationScan, DastardClient, post_process
+from scan_server.tes_scanner import CringeDastardSettings
 import pytest
 import statemachine
 import numpy as np
@@ -48,23 +49,24 @@ def test_tes_scanner():
     listener = MockListener()
     client = MockClient(("test_url", "test_port"), listener)
     bg_log_file = open(os.path.join(util.ssrl_dir, "background_process_log_file"), "w")
+    dummy_cdsettings = CringeDastardSettings(-1, -1, -1, -1, False, True)
     scanner = TESScanner(dastard = client, beamtime_id ="test", base_user_output_dir=base_user_output_dir,
-        background_process_log_file=bg_log_file)
+        background_process_log_file=bg_log_file, cdsettings=dummy_cdsettings)
     listener.set_next(topic="WRITING", contents ={"Active":True, "FilenamePattern": util.ssrl_filename_pattern})
     util.write_ssrl_experiment_state_file(util.ssrl_filename_pattern%("experiment_state","txt"))
     #write the full experiment state file all at once, it is much easier than emulating the data arriving
     scanner.file_start()
     assert client._last_method == "SourceControl.WriteControl"
-    scanner.calibration_start(var_name='time', var_unit='s', scan_num=0, sample_id = 0, sample_desc = "test_sample", extra={}, drift_correction_plan='none', routine = "ssrl_10_1_mix_cal")
+    scanner.calibration_start(var_name='time', var_unit='s', sample_id = 0, sample_desc = "test_sample", extra={}, drift_correction_plan='none', routine = "ssrl_10_1_mix_cal")
     scanner.scan_point_start(60, extra={})
     scanner.scan_point_end()
     scanner.scan_end(_try_post_processing=False)
     scanner.calibration_learn_from_last_data()
-    with pytest.raises(AssertionError):
-        scanner.roi_set([(100, 150, 'roi_a'), (5, 550, 'roi_b')]) # 2nd bin starts below first bin
-    scanner.roi_set([(240, 300, 'roi_a'), (500, 550, 'roi_b'), (750, 800, 'roi_c')])
+    # with pytest.raises(AssertionError):
+    #     scanner.roi_set({"roi_a":(100,150), "roi_b":(5,550)}) # 2nd bin starts below first bin
+    scanner.roi_set({"roi_a":(240,300), "roi_b":(500, 550), "roi_c":(750, 800)})
 
-    scanner.scan_start(var_name="mono", var_unit="eV", scan_num=1,  
+    scanner.scan_start(var_name="mono", var_unit="eV",   
                 sample_id=0, sample_desc="test_desc", extra = {"tempK":43.2}, 
                 drift_correction_plan = "before_and_after_cals")
     with pytest.raises(statemachine.exceptions.TransitionNotAllowed):
@@ -77,7 +79,7 @@ def test_tes_scanner():
     scanner.scan_point_start(123, extra={})
     scanner.scan_point_end()
     scanner.scan_end(_try_post_processing=False)
-    scanner.scan_start(var_name="mono", var_unit="eV", scan_num=2, 
+    scanner.scan_start(var_name="mono", var_unit="eV", 
                 sample_id=0, sample_desc="test_desc", extra = {"another_var":"some text"}, 
                 drift_correction_plan = "basic")
     scan_to_copy = util.scans()[1]
@@ -87,10 +89,10 @@ def test_tes_scanner():
         scanner.scan_point_end(_epoch_time_s_for_test=b)
     scanner.scan_end(_try_post_processing=False)
     # reach into internals to make the times correct, dont do this in real usage
-    scanner.last_scan.epoch_time_end_s = scan_to_copy.epoch_time_end_s
-    scanner.last_scan.epoch_time_start_s = scan_to_copy.epoch_time_start_s
+    scanner._last_scan.epoch_time_end_s = scan_to_copy.epoch_time_end_s
+    scanner._last_scan.epoch_time_start_s = scan_to_copy.epoch_time_start_s
     # done reaching into internals
-    scanner.calibration_start(var_name='time', var_unit='s', scan_num=3, sample_id = 0, sample_desc = "test_sample", extra={}, drift_correction_plan='none', routine = "ssrl_10_1_mix_cal")
+    scanner.calibration_start(var_name='time', var_unit='s', sample_id = 0, sample_desc = "test_sample", extra={}, drift_correction_plan='none', routine = "ssrl_10_1_mix_cal")
     scanner.scan_point_start(60, extra={})
     scanner.scan_point_end()
     scanner.scan_end(_try_post_processing=False)
@@ -120,14 +122,14 @@ def test_tes_scanner():
     assert r == "started new process"
     r = scanner.start_post_processing(_max_channels=3)
     assert r == "previous process still running"
-    scanner.background_process.wait(timeout=30)
+    scanner._background_process.wait(timeout=30)
 
     assert os.path.isfile(os.path.join(base_user_output_dir, "beamtime_test/scan0002/scan0002_hist2d.png"))
 
 def test_scan():
     scan = DataScan(var_name="mono", var_unit="eV", scan_num=0, beamtime_id="test_Beamtime", 
-                sample_id=0, sample_desc="test_desc", extra={}, data_path="no actual data", user_output_dir="dummy",
-                drift_correction_plan = "none")
+                sample_id=0, sample_desc="test_desc", extra={}, data_path="no actual data",
+                drift_correction_plan = "none", user_output_dir="dummy")
     for i, mono_val in enumerate(np.arange(5)):
         start, end = i, i+0.5
         scan.point_start(mono_val, start, extra={})

@@ -19,7 +19,15 @@ import subprocess
 from glob import glob
 
 
-
+@dataclass_json
+@dataclass
+class CringeDastardSettings:
+    record_nsamples: int
+    nrecord_npresamples: int
+    trigger_threshold: int
+    trigger_n_monotonic: int
+    write_off: bool
+    write_ljh: bool
 
 @dataclass_json
 @dataclass
@@ -33,6 +41,7 @@ class BaseScan():
     extra: dict
     data_path: str
     drift_correction_plan: str
+    user_output_dir: str
     point_extras: dict = field(default_factory=dict)
     var_values: List[float] = field(default_factory=list)
     epoch_time_start_s: List[int] = field(default_factory=list)
@@ -73,10 +82,10 @@ class BaseScan():
         self._ended = True
 
     def description_str(self):
-        return f"scan{self.scan_num} sample{self.sample_id} beamtime_id{self._beamtime_id}"
+        return f"scan{self.scan_num} sample{self.sample_id} beamtime_id{self.beamtime_id}"
 
     def __repr__(self):
-        return f"<Scan num{self.scan_num} beamtime_id{self._beamtime_id} npts{len(self.var_values)}>"
+        return f"<Scan num{self.scan_num} beamtime_id{self.beamtime_id} npts{len(self.var_values)}>"
         
     def hist2d(self, data, bin_edges, attr):
         starts_nano = int(1e9)*np.array(self.epoch_time_start_s, dtype="int64")
@@ -190,11 +199,10 @@ class ScannerState(StateMachine):
 
 class TESScanner():
     """talks to dastard and mass"""
-    def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str, background_process_log_file, write_ljh=False, write_off=True):
+    def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str, background_process_log_file, cdsettings):
         self._dastard = dastard
         self._beamtime_id = beamtime_id
-        self._write_ljh = write_ljh
-        self._write_off = write_off
+        self._cdsettings = cdsettings
         self._base_user_output_dir = base_user_output_dir
         self._state: ScannerState = ScannerState()
         self._tfy_ulim = 1600
@@ -255,11 +263,11 @@ class TESScanner():
     def file_start(self, path=None, write_ljh=None, write_off=None):
         """tell dastard to start a new file, must be called before any calibration or scan functions"""
         if write_ljh is None:
-            write_ljh = self._write_ljh
+            write_ljh = self._cdsettings.write_ljh
         if write_off is None:
-            write_off = self._write_off
-        self._off_filename = self._dastard.start_file(write_ljh, write_off, path)
+            write_off = self._cdsettings.write_off
         self._state.file_start()
+        self._off_filename = self._dastard.start_file(write_ljh, write_off, path)
         return self._off_filename
         # dastard lazily creates off files when it has data to write
         # so we need to wait to open the off files until some time has
@@ -267,8 +275,8 @@ class TESScanner():
         # so we must always access through _get_data (_hides it from the rpc)
 
     def file_end(self):
-        self._dastard.stop_writing()
         self._state.file_end()
+        self._dastard.stop_writing()
         self._reset()
 
     def set_projectors(self, projector_filename="/home/pcuser/.scan_server/nsls_projectors.hdf5"):
@@ -288,7 +296,7 @@ class TESScanner():
 
 
     # Scan operations
-    def scan_start(self, var_name: str, var_unit: str, scan_num: int, sample_id: int, sample_desc: str, extra: dict = {}, drift_correction_plan: str = 'none'):       
+    def scan_start(self, var_name: str, var_unit: str, sample_id: int, sample_desc: str, extra: dict = {}, drift_correction_plan: str = 'none'):       
         self._state.scan_start()
         scan_num = self.scan_num
         for fname in self._log_filenames("scan", scan_num):
@@ -298,21 +306,21 @@ class TESScanner():
         self._validate_drift_correction_plan(drift_correction_plan)
         self._scan = DataScan(var_name, var_unit, scan_num, self._beamtime_id, sample_id, 
             sample_desc, extra, data_path, drift_correction_plan=drift_correction_plan,
-            cal_number=self._cal_number, roi=self._roi)
+            cal_number=self._cal_number, roi=self._roi, user_output_dir=self._scan_user_output_dir(scan_num))
         self._dastard.set_experiment_state(f"SCAN{scan_num}")
 
         
-    def scan_point_start(self, scan_var: float, epoch_time_s=None, extra: dict=None):
+    def scan_point_start(self, scan_var: float, _epoch_time_s_for_test=None, extra: dict=None):
         self._state.scan_point_start()
-        if epoch_time_s is None:
-            epoch_time_s = time.time()
-        self._scan.point_start(scan_var, epoch_time_s, extra)
+        if _epoch_time_s_for_test is None:
+            _epoch_time_s_for_test = time.time()
+        self._scan.point_start(scan_var, _epoch_time_s_for_test, extra)
 
-    def scan_point_end(self, epoch_time_s=None):
+    def scan_point_end(self, _epoch_time_s_for_test=None):
         self._state.scan_point_end()
-        if epoch_time_s is None:
-            epoch_time_s = time.time()
-        self._scan.point_end(epoch_time_s)
+        if _epoch_time_s_for_test is None:
+            _epoch_time_s_for_test = time.time()
+        self._scan.point_end(_epoch_time_s_for_test)
 
     def scan_end(self, _try_post_processing=False):
         self._state.scan_end()
@@ -328,7 +336,7 @@ class TESScanner():
             self.start_post_processing()
 
     # Calibration Functions
-    def calibration_start(self, var_name: str, var_unit: str, scan_num: int, sample_id: int, sample_desc: str, routine: str, extra: dict ={}, drift_correction_plan: str ='none'):
+    def calibration_start(self, var_name: str, var_unit: str, sample_id: int, sample_desc: str, routine: str, extra: dict ={}, drift_correction_plan: str ='none'):
         """start taking calibraion data, ensure the appropriate x-rays are incident on the detector
         sample_id: int - for your reference
         sample_desc: str - for your reference
@@ -344,7 +352,7 @@ class TESScanner():
         self._scan = CalibrationScan(var_name, var_unit, scan_num, self._beamtime_id, sample_id, 
                                     sample_desc, extra, data_path, 
                                     drift_correction_plan, routine=routine,
-                                    roi=self._roi)
+                                    roi=self._roi, user_output_dir=self._scan_user_output_dir(scan_num))
         self._dastard.set_experiment_state(f"CAL{scan_num}")
         self._cal_number = scan_num
         
@@ -507,11 +515,11 @@ class TESScanner():
                 except ValueError:
                     pass
             if nums == []:
-                scan_num = 1
+                scan_num = 0
             else:
                 scan_num = max(nums) + 1
         else:
-            scan_num = 1
+            scan_num = 0
         return scan_num
             
     def _user_log_dir(self, make=True):
@@ -539,7 +547,7 @@ class TESScanner():
         if drift_correction_plan not in ["none", "basic", "before_and_after_cals"]:
             raise Exception("invalid drift plan")
 
-    def _scan_user_output_dir(self, scan_num, subdir = None, make = True):
+    def _scan_user_output_dir(self, scan_num, subdir = None, make = False):
         dirname = self._beamtime_user_output_dir(f"scan{scan_num:04d}", make = make)
         if subdir is not None:
             dirname = os.path.join(dirname, subdir)

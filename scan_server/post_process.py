@@ -34,9 +34,24 @@ def needed_calibrations_exist(scan, calibrations):
     if scan.drift_correction_plan == "basic":
         return True
     if scan.drift_correction_plan == "before_and_after_cals":
-        return scan.cal_number+1 in calibrations.keys()
+        next_cal = get_next_cal_number(calibrations, scan.cal_number)
+        if next_cal is None:
+            return False
+        else: 
+            return True
     else:
-        raise Exception(f"scan drift_correct_strategy={scan.drift_correction_plan} is not recognized")
+        raise Exception(f"scan drift_correct_strategy={scan.drift_correction_plan} is not recognized") 
+
+def get_next_cal_number(calibrations, cal_number):
+    """either returns the next cal or None"""
+    cals = list(calibrations.keys())
+    try:
+        pre_cal_index = cals.index(cal_number)
+        next_cal = cals[pre_cal_index+1]
+        return next_cal
+    except:
+        return None
+
 
 def get_scans_to_process(scans, calibrations):
     scans2 = OrderedDict((scan.scan_num, scan) for scan in scans.values() if should_process(scan, calibrations))
@@ -58,7 +73,10 @@ def process(scan, calibrations, drift_correction_plan, bin_edges_ev, output_dir,
         data.learnDriftCorrection(states=drift_correct_states)
         attr = "filtValueDC"
     elif drift_correction_plan == "before_and_after_cals":
-        drift_correct_states = [f"CAL{cal_number}", f"SCAN{scan.scan_num}", f"CAL{cal_number + 1}"]
+        print("before and after cals")
+        print(scan.scan_num)
+        next_cal_number = get_next_cal_number(calibrations, cal_number)
+        drift_correct_states = [f"CAL{cal_number}", f"SCAN{scan.scan_num}", f"CAL{next_cal_number}"]
         data.learnDriftCorrection(states=drift_correct_states)      
         attr = "filtValueDC"
     elif drift_correction_plan == "none":
@@ -82,8 +100,13 @@ def process(scan, calibrations, drift_correction_plan, bin_edges_ev, output_dir,
 
 def _find_scans_then_process_if_needed_and_ready(beamtime_dir, max_channels=10000):
     scans, calibrations = get_scans_and_calibrations(beamtime_dir)
+    print("found scans")
+    print(list(scans.keys()))
+    print("found calibrations")
+    print(list(calibrations.keys()))
     scans_to_process = get_scans_to_process(scans, calibrations)
-
+    print("scans to process")
+    print(scans_to_process.keys())
     for scan in scans_to_process.values():
         print(f"processing: {scan}")
         process(scan, calibrations, scan.drift_correction_plan, 

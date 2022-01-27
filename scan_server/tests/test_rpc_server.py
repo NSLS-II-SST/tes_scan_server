@@ -11,7 +11,7 @@ def test_call_method_from_data():
     dispatch["echo"] = lambda s: s
     no_traceback_error_types = []
     data = json.dumps({"method": "add", "params": [1, 2]})
-    _id, method_name, args, result, error = rpc_server.call_method_from_data(data, dispatch, no_traceback_error_types)
+    _id, method_name, args, kwargs, result, error = rpc_server.call_method_from_data(data, dispatch, no_traceback_error_types)
     assert _id == -1
     assert method_name == "add"
     assert result == 3
@@ -19,7 +19,7 @@ def test_call_method_from_data():
     assert error is None
 
     data = json.dumps({"method": "echo", "params": [6]})
-    _id, method_name, args, result, error = rpc_server.call_method_from_data(data, dispatch, no_traceback_error_types)
+    _id, method_name, args, kwargs, result, error = rpc_server.call_method_from_data(data, dispatch, no_traceback_error_types)
     assert _id == -1
     assert method_name == "echo"
     assert result == 6
@@ -27,19 +27,19 @@ def test_call_method_from_data():
     assert error is None
 
     data = json.dumps({"method": "not_exist", "params": [6]})
-    _id, method_name, args, result, error = rpc_server.call_method_from_data(data, dispatch, no_traceback_error_types)
+    _id, method_name, args, kwargs, result, error = rpc_server.call_method_from_data(data, dispatch, no_traceback_error_types)
     assert error == "Method 'not_exist' does not exit, valid methods are ['add', 'echo']"
    
     data = json.dumps({"method": "echo", "params": 6})
-    _id, method_name, args, result, error = rpc_server.call_method_from_data(data, dispatch, no_traceback_error_types)
+    _id, method_name, args, kwargs, result, error = rpc_server.call_method_from_data(data, dispatch, no_traceback_error_types)
     assert error == "args must be a list, instead it is 6"
 
     data = json.dumps({"method": "echo"})
-    _id, method_name, args, result, error = rpc_server.call_method_from_data(data, dispatch, no_traceback_error_types)
+    _id, method_name, args, kwargs, result, error = rpc_server.call_method_from_data(data, dispatch, no_traceback_error_types)
     assert args == []
 
     data = json.dumps({"params": [1, 2]})
-    _id, method_name, args, result, error = rpc_server.call_method_from_data(data, dispatch, no_traceback_error_types)
+    _id, method_name, args, kwargs, result, error = rpc_server.call_method_from_data(data, dispatch, no_traceback_error_types)
     assert error == "method key does not exist"
 
 def test_with_real_socket():

@@ -28,8 +28,8 @@ def scan_logs_raw():
 def scan_from_log(log: dict):
     "make Scan objects from .yaml logs from Jamie's software"
     scan = DataScan(var_name="mono", var_unit="eV", scan_num=log["header"]["htxs"], beamtime_id="test",
-                sample_id=0, sample_desc=d17[0]["sample"], extra={}, user_output_dir="dummy",
-                data_path="no actual data", drift_correction_plan = None)
+                sample_id=0, sample_desc=d17[0]["sample"], extra={},
+                data_path="no actual data", drift_correction_plan = None, user_output_dir="dummy", cal_number=0)
     for i, mono_val in enumerate(log["mono"].keys()):
         start, end = log["mono"][mono_val]
         scan.point_start(mono_val, start, extra={})
@@ -69,10 +69,10 @@ def write_ssrl_experiment_state_file(filename):
         f.write(f"{cal_start}, CAL0\n")
         f.write(f"{cal_stop}, PAUSE\n")
         for j, scan in enumerate(scans()):
-            f.write(f"{int(scan.epoch_time_start_s[0]*1e9)}, SCAN{j}\n")
+            f.write(f"{int(scan.epoch_time_start_s[0]*1e9)}, SCAN{j+1}\n")
             f.write(f"{int(scan.epoch_time_end_s[-1]*1e9)}, PAUSE\n")
         cal_start, cal_stop = int(d30[1]["header"]["start"]*1e9), int(d30[1]["header"]["stop"]*1e9)
-        f.write(f"{cal_start}, CAL1\n")
+        f.write(f"{cal_start}, CAL3\n")
         f.write(f"{cal_stop}, PAUSE\n")
 
 
