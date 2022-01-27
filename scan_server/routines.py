@@ -4,6 +4,44 @@ from mass.calibration import algorithms
 import mass
 from scan_server.mass_monkey_patch import unixnanos_to_state_slices
 
+
+def nsls_mix_980eV(cal_number, data, attr, calibratedName):
+    data.setDefaultBinsize(0.2)
+    cal_state = f"CAL{cal_number}"
+    ds = data.firstGoodChannel()
+    ds.learnCalibrationPlanFromEnergiesAndPeaks(attr=attr, 
+    ph_fwhm=50, states=cal_state, line_names=["CKAlpha", "NKAlpha", "OKAlpha", "FeLAlpha", "NiLAlpha", 'CuLAlpha'])
+    ds.calibrateFollowingPlan(attr, overwriteRecipe=True, dlo=20, dhi=25)
+    # ds.diagnoseCalibration()
+    data.alignToReferenceChannel(ds, attr, np.arange(0, 20000,  10))
+    data.calibrateFollowingPlan(attr, calibratedName,
+        dlo=20, dhi=25, overwriteRecipe=True)
+    data.calibrationSaveToHDF5Simple("/home/pcuser/.scan_server/nsls_server_saved_calibration.hdf5")
+    success = True
+    return success
+
+def simulated_source(cal_number, data, attr, calibratedName):
+    data.setDefaultBinsize(0.1)
+
+    cal_state = f"CAL{cal_number}"
+    ds = data.firstGoodChannel()
+    line_names = ["600", "800", "1000"] # dcom hard codes 0.6, 0.8, 1.0 ratios for pulses
+    mass.STANDARD_FEATURES["600"]=600
+    mass.STANDARD_FEATURES["800"]=800
+    mass.STANDARD_FEATURES["1000"]=1000 # dcom hard codes 0.6, 0.8, 1.0 ratios for pulses
+    ds.learnCalibrationPlanFromEnergiesAndPeaks(attr=attr, states=cal_state, ph_fwhm=30, line_names=line_names)
+
+    # for ds in data.values()[1:]:
+    #     ds.learnResidualStdDevCut(n_sigma_equiv=10, plot=False, setDefault=True)
+    # ds = data[1] # the above loop rebinds ds to the last dataset, but lets keep looking at the same one
+    # ds.learnResidualStdDevCut(n_sigma_equiv=10, plot=False, setDefault=True)
+
+    data.alignToReferenceChannel(ds, attr, np.arange(0, 5000,  1))
+    data.calibrateFollowingPlan(attr, calibratedName=calibratedName,
+        dlo=15, dhi=15, overwriteRecipe=True)
+    success = True
+    return success
+
 def ssrl_10_1_mix_cal(cal_number, data, attr, calibratedName):
     data.setDefaultBinsize(0.5)
 

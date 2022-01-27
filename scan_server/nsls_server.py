@@ -1,11 +1,12 @@
-from scan_server import TESScanner, DastardClient, DastardListener, rpc_server
+from scan_server import TESScanner, DastardClient, DastardListener, rpc_server, NSLSExtra
 import os
 from pathlib import Path
+from scan_server import nsls_extras
+
 
 # needed for exception filtering
 import scan_server
 import statemachine
-
 
 
 def start():
@@ -19,6 +20,12 @@ def start():
     port = 4000
     time_human = rpc_server.time_human()
 
+    # ideally we would set the beamline specific stuff here
+    # record_nsamples = 2000
+    # record_npresamples = 1000
+    # trigger_threshold = -100
+    # trigger_other_setting = ??
+
     no_traceback_error_types = [scan_server.dastard_client.DastardError, statemachine.exceptions.TransitionNotAllowed]
 
     dastard_listener = DastardListener(dastard_host, dastard_port)
@@ -28,6 +35,7 @@ def start():
     scanner = TESScanner(dastard, beamtime_id, base_user_output_dir, bg_log_file, write_ljh=True, write_off=False)
     server_log_filename = os.path.join(server_log_dir, f"{time_human}.log")
     dispatch = rpc_server.get_dispatch_from(scanner)
+    dispatch.update(rpc_server.get_dispatch_from(NSLSExtra()))
     print("Starting NSLS-II Scan Server")
     with open(server_log_filename, "w") as f:
         rpc_server.start(address, port, dispatch, verbose=True, log_file=f, 

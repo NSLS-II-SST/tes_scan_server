@@ -160,12 +160,17 @@ def start(address, port, dispatch, verbose, log_file, no_traceback_error_types):
                 if data is None:
                     print(f"data was none, breaking to wait for connection")
                     break
-                a = handle_one_message(clientsocket, data, dispatch, verbose, no_traceback_error_types)  
-                t_human, data, response = a
-                if log_file is not None:
-                    log_file.write(f"{t_human}")
-                    log_file.write(f"{data}\n")
-                    log_file.write(f"{response}\n")
+                try: 
+                    a = handle_one_message(clientsocket, data, dispatch, verbose, no_traceback_error_types)  
+                    if log_file is not None:
+                        t_human, data, response = a
+                        log_file.write(f"{t_human}")
+                        log_file.write(f"{data}\n")
+                        log_file.write(f"{response}\n")
+                except Exception as ex:
+                    s = f"failed handle_one_message with data = {data} and exception = {ex}"
+                    print(s)
+                    log_file.write(s)
     except KeyboardInterrupt:
         print("\nCtrl-C detected, shutting down")
         if log_file is not None:

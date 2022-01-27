@@ -73,10 +73,10 @@ class BaseScan():
         self._ended = True
 
     def description_str(self):
-        return f"scan{self.scan_num} sample{self.sample_id} beamtime_id{self.beamtime_id}"
+        return f"scan{self.scan_num} sample{self.sample_id} beamtime_id{self._beamtime_id}"
 
     def __repr__(self):
-        return f"<Scan num{self.scan_num} beamtime_id{self.beamtime_id} npts{len(self.var_values)}>"
+        return f"<Scan num{self.scan_num} beamtime_id{self._beamtime_id} npts{len(self.var_values)}>"
         
     def hist2d(self, data, bin_edges, attr):
         starts_nano = int(1e9)*np.array(self.epoch_time_start_s, dtype="int64")
@@ -192,28 +192,28 @@ class TESScanner():
     """talks to dastard and mass"""
     def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str, background_process_log_file, write_ljh=False, write_off=True):
         self._dastard = dastard
-        self.beamtime_id = beamtime_id
-        self.write_ljh = write_ljh
-        self.write_off = write_off
-        self.base_user_output_dir = base_user_output_dir
+        self._beamtime_id = beamtime_id
+        self._write_ljh = write_ljh
+        self._write_off = write_off
+        self._base_user_output_dir = base_user_output_dir
         self._state: ScannerState = ScannerState()
-        self.tfy_ulim = 1600
-        self.tfy_llim = 200
+        self._tfy_ulim = 1600
+        self._tfy_llim = 200
         self._reset()
-        self.background_process = None # dont put this in _reset, we want it to persist over reset
-        self.background_process_log_file = background_process_log_file
+        self._background_process = None # dont put this in _reset, we want it to persist over reset
+        self._background_process_log_file = background_process_log_file
 
 
     def _reset(self):
         self._last_scan = None
         self._scan = None
         self._data = None
-        self._roi = {"tfy": (self.tfy_llim, self.tfy_ulim)}
+        self._roi = {"tfy": (self._tfy_llim, self._tfy_ulim)}
+        self._cal_number: int = -1
         self._scan_num = None
-        self.overwrite = False
-        self.calibration_to_routine: List[str] = [] 
+        self._overwrite = False
+        self._calibration_to_routine: List[str] = [] 
         self.calibration_state = "no_calibration"
-        self.cal_number: int = -1
         self._off_filename = None
 
 
@@ -231,28 +231,6 @@ class TESScanner():
             return self._roi
         else:
             return self._roi.get(key, None)
-
-    def roi_set(self, roi_dict):
-        """
-        must be called before other roi functions
-        roi_dict: a dictinary of {name: (lo, hi), ...} energy pairs in eV, each pair specifies a region of interest
-        if roi_dict is none, reset ROIs to just tfy
-        """ 
-        # roi list is a a list of pairs of lo, hi energy pairs
-        if roi_dict is None or len(roi_dict) == 0:
-            self._roi = {"tfy": (self.tfy_llim, self.tfy_ulim)}
-            return
-        else:
-            keys = list(roi_dict.keys())
-            for key in keys:
-                (lo_ev, hi_ev) = roi_dict.get(key, (None, None))
-                if lo_ev is None or hi_ev is None:
-                    self._roi.pop(key, None)
-                    roi_dict.pop(key, None)
-                else:
-                    assert hi_ev > lo_ev
-            self._roi.update(roi_dict)
-            return
         
     @property
     def scan_num(self):
@@ -277,9 +255,9 @@ class TESScanner():
     def file_start(self, path=None, write_ljh=None, write_off=None):
         """tell dastard to start a new file, must be called before any calibration or scan functions"""
         if write_ljh is None:
-            write_ljh = self.write_ljh
+            write_ljh = self._write_ljh
         if write_off is None:
-            write_off = self.write_off
+            write_off = self._write_off
         self._off_filename = self._dastard.start_file(write_ljh, write_off, path)
         self._state.file_start()
         return self._off_filename
@@ -293,21 +271,34 @@ class TESScanner():
         self._state.file_end()
         self._reset()
 
-    def set_projectors(self, projector_filename):
+    def set_projectors(self, projector_filename="/home/pcuser/.scan_server/nsls_projectors.hdf5"):
         self._dastard.set_projectors(projector_filename)
+
+    def set_pulse_triggers(self):
+        # ideally record length and the trigger settings would easily vary based on config
+        # so they should live in nsls_server.py
+        self._dastard.configure_record_lengths(npre=1000,nsamp=2000) 
+        self._dastard.zero_all_triggers()
+        self._dastard.set_pulse_trigger_all_chans()
+
+    def set_noise_triggers(self):
+        self._dastard.configure_record_lengths(npre=1000,nsamp=2000) 
+        self._dastard.zero_all_triggers()
+        self._dastard.set_noise_trigger_all_chans()
+
 
     # Scan operations
     def scan_start(self, var_name: str, var_unit: str, scan_num: int, sample_id: int, sample_desc: str, extra: dict = {}, drift_correction_plan: str = 'none'):       
         self._state.scan_start()
         scan_num = self.scan_num
         for fname in self._log_filenames("scan", scan_num):
-            if not self.overwrite:
+            if not self._overwrite:
                 assert not os.path.isfile(fname)
         data_path = self._dastard.get_data_path()
         self._validate_drift_correction_plan(drift_correction_plan)
-        self._scan = DataScan(var_name, var_unit, scan_num, self.beamtime_id, sample_id, 
+        self._scan = DataScan(var_name, var_unit, scan_num, self._beamtime_id, sample_id, 
             sample_desc, extra, data_path, drift_correction_plan=drift_correction_plan,
-            cal_number=self.cal_number, roi=self._roi)
+            cal_number=self._cal_number, roi=self._roi)
         self._dastard.set_experiment_state(f"SCAN{scan_num}")
 
         
@@ -328,7 +319,7 @@ class TESScanner():
         self._scan.end()
         scan_name = "calibration" if self._scan.calibration else "scan"
         for fname in self._log_filenames(scan_name, self._scan.scan_num):
-            self._scan.to_disk(fname, self.overwrite)
+            self._scan.to_disk(fname, self._overwrite)
         self._last_scan = self._scan
         self._advance_scan_num()
         self._scan = None
@@ -346,23 +337,29 @@ class TESScanner():
         self._state.scan_start()
         # self.set_pulse_triggers()
 
-        self.calibration_to_routine.append(routine)
+        self._calibration_to_routine.append(routine)
         data_path = self._dastard.get_data_path()
         self._validate_drift_correction_plan(drift_correction_plan)
         scan_num = self.scan_num
-        self._scan = CalibrationScan(var_name, var_unit, scan_num, self.beamtime_id, sample_id, 
+        self._scan = CalibrationScan(var_name, var_unit, scan_num, self._beamtime_id, sample_id, 
                                     sample_desc, extra, data_path, 
                                     drift_correction_plan, routine=routine,
                                     roi=self._roi)
         self._dastard.set_experiment_state(f"CAL{scan_num}")
-        self.cal_number = scan_num
+        self._cal_number = scan_num
         
 
     def calibration_learn_from_last_data(self):
         """use the last calibration data plus the specified routine to learn the realtime energy calibration curves"""
-        self._calibration_apply_routine(self.calibration_to_routine[-1],
-            self.cal_number, self._get_data())
+        self._calibration_apply_routine(self._calibration_to_routine[-1],
+            self._cal_number, self._get_data())
         # now we can access energy
+
+    def calibration_load_from_disk(self):
+        # an alternate way of getting a calibration
+        data = self._get_data()
+        data.calibrationLoadFromHDF5Simple("/home/pcuser/.scan_server/nsls_server_saved_calibration.hdf5")
+        self.calibration_state = "calibrated"
 
     def _calibration_apply_routine(self, routine, cal_number, data):
         # print(f"{routine=} {cal_number=}")
@@ -384,7 +381,7 @@ class TESScanner():
         return self._data
 
     def roi_get_counts(self):
-        """return a list of counts in each ROI for the last scan epoch time.
+        """return a dictionary of counts in each ROI for the last scan epoch time.
         Should call after scan_point_end"""
         # Need to put in TFY-XAS
         last_epoch_idx = len(self._scan.epoch_time_end_s) - 1
@@ -393,15 +390,38 @@ class TESScanner():
         # roi should always have at least TFY in it
         roi_counts = {}
         if self.calibration_state == "no_calibration":
-            # check reasonable range for filtValue, or better yet, stop trying to histogram
-            bin_centers, counts = self._get_data().histWithUnixnanos([10, 20000], "filtValue", [start_unixnano], [end_unixnano])
+            # ch_eck reasonable range for filtValue, or better yet, stop trying to histogram
+            bin_centers, counts = self._get_data().histWithUnixnanos([100, 60000], "filtValue", [start_unixnano], [end_unixnano])
             roi_counts['tfy'] = int(counts[0])
         else:
             for name, (lo_ev, hi_ev) in self._roi.items():
+                # we should calculate energy once, then bin it up into all the ROIS
+                # unless we want them to overlap, like with TFY... which it seems we do want
                 bin_centers, counts = self._get_data().histWithUnixnanos([lo_ev, hi_ev], "energy", [start_unixnano], [end_unixnano])
                 roi_counts[name] = int(counts[0])
-            #print(bin_centers, counts)
         return roi_counts
+
+    def roi_set(self, roi_dict):
+        """
+        must be called before other roi functions
+        roi_dict: a dictinary of {name: (lo, hi), ...} energy pairs in eV, each pair specifies a region of interest
+        if roi_dict is none, reset ROIs to just tfy
+        """ 
+        # roi list is a a list of pairs of lo, hi energy pairs
+        if roi_dict is None or len(roi_dict) == 0:
+            self._roi = {"tfy": (self._tfy_llim, self._tfy_ulim)}
+            return
+        else:
+            keys = list(roi_dict.keys())
+            for key in keys:
+                (lo_ev, hi_ev) = roi_dict.get(key, (None, None))
+                if lo_ev is None or hi_ev is None:
+                    self._roi.pop(key, None)
+                    roi_dict.pop(key, None)
+                else:
+                    assert hi_ev > lo_ev
+            self._roi.update(roi_dict)
+            return
 
     def roi_save_counts(self):
         roi_counts = self.roi_get_counts()
@@ -426,12 +446,16 @@ class TESScanner():
     def quick_post_process(self):
         """
         Will be broken right now due to ROI changes
+
+        the goal is to compile a 2d histogram from the last scan 
+        by using the ChannelGroup stored in 
+        return by self._get_data()
         """
         assert self._last_scan.roi != {}, "rois_bin_edges is None: first call set_rois, then start_rois_counts, roi_start_counts, then roi_get_counts"
         #a, b = self.roi_counts_start_unixnano, time_unixnano()
         #self.roi_counts_start_unixnano = None
         if self.calibration_state == "no_calibration":
-            return 
+            retu_rn 
         data = self._get_data()
         roi_names = self._last_scan.roi.keys()
         attr = 'energy'
@@ -448,22 +472,22 @@ class TESScanner():
         np.savetxt(output_file, roi_counts.T, header=header, fmt="%d")
         
     def start_post_processing(self, _wait_for_finish=False, _max_channels=10000):
-        if self.background_process is not None:
+        if self._background_process is not None:
             # we could remove this logic and let more than one background process run
             # it would be slightly faster
             # but first we would want to improve the logic on deciding which channels to process
             # right now it is based on the directory created when it is done, so if you start
             # two processes quickly, they will do the same work
-            isdone = self.background_process.poll() is not None
+            isdone = self._background_process.poll() is not None
             if not isdone:
                 return "previous process still running"
         args = ["process_scans", self._beamtime_user_output_dir(), f"--max_channels={_max_channels}"]
         print(args)
-        self.background_process = subprocess.Popen(args, stdout = self.background_process_log_file, stderr=subprocess.STDOUT)
+        self._background_process = subprocess.Popen(args, stdout = self._background_process_log_file, stderr=subprocess.STDOUT)
         return "started new process"
     
     def _beamtime_user_output_dir(self, subdir = None, make = True):
-        dirname = os.path.join(self.base_user_output_dir, f"beamtime_{self.beamtime_id}")
+        dirname = os.path.join(self._base_user_output_dir, f"beamtime_{self._beamtime_id}")
         if subdir is not None:
             dirname = os.path.join(dirname, subdir)
         if make:
@@ -506,7 +530,7 @@ class TESScanner():
         assert log_name in ["scan", "calibration"]
         filename1 = os.path.join(self._user_log_dir(), f"{log_name}{log_num:04d}.json")
         filename2 = os.path.join(self._tes_log_dir(), f"{log_name}{log_num:04d}.json")
-        if not self.overwrite:
+        if not self._overwrite:
             assert not os.path.isfile(filename1), f"{filename1} already exists"
             assert not os.path.isfile(filename2), f"{filename2} already exists"
         return [filename1, filename2]        
