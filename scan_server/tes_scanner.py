@@ -23,7 +23,7 @@ from glob import glob
 @dataclass
 class CringeDastardSettings:
     record_nsamples: int
-    nrecord_npresamples: int
+    record_npresamples: int
     trigger_threshold: int
     trigger_n_monotonic: int
     write_off: bool
@@ -285,12 +285,15 @@ class TESScanner():
     def set_pulse_triggers(self):
         # ideally record length and the trigger settings would easily vary based on config
         # so they should live in nsls_server.py
-        self._dastard.configure_record_lengths(npre=1000,nsamp=2000) 
+        self._dastard.configure_record_lengths(nsamp=self._cdsettings.record_nsamples
+        , npre=self._cdsettings.record_npresamples) 
         self._dastard.zero_all_triggers()
-        self._dastard.set_pulse_trigger_all_chans()
+        self._dastard.set_pulse_trigger_all_chans(threshold=self._cdsettings.trigger_threshold, 
+        n_monotone=self._cdsettings.trigger_n_monotonic)
 
     def set_noise_triggers(self):
-        self._dastard.configure_record_lengths(npre=1000,nsamp=2000) 
+        self._dastard.configure_record_lengths(nsamp=self._cdsettings.record_nsamples
+        , npre=self._cdsettings.record_npresamples) 
         self._dastard.zero_all_triggers()
         self._dastard.set_noise_trigger_all_chans()
 
@@ -503,27 +506,29 @@ class TESScanner():
         return dirname    
     
     def _get_current_scan_num_from_logs(self):
-        log_dir = self._user_log_dir(make=False)
-        if exists(log_dir):
-            scans = glob(join(log_dir, "scan*.json"))
-            cals = glob(join(log_dir, "calibration*.json"))
-            log_names = scans + cals
-            nums = []
-            for name in log_names:
-                try:
-                    nums.append(int(name[-9:-5]))
-                except ValueError:
-                    pass
-            if nums == []:
-                scan_num = 0
-            else:
-                scan_num = max(nums) + 1
-        else:
-            scan_num = 0
-        return scan_num
+        # log_dir = self._tes_log_dir(make=False)
+        # if exists(log_dir):
+        #     scans = glob(join(log_dir, "scan*.json"))
+        #     cals = glob(join(log_dir, "calibration*.json"))
+        #     log_names = scans + cals
+        #     nums = []
+        #     for name in log_names:
+        #         try:
+        #             nums.append(int(name[-9:-5]))
+        #         except ValueError:
+        #             pass
+        #     if nums == []:
+        #         scan_num = 0
+        #     else:
+        #         scan_num = max(nums) + 1
+        # else:
+        #     scan_num = 0
+        # return scan_num
+        return 0
             
     def _user_log_dir(self, make=True):
-        return self._beamtime_user_output_dir("logs", make=make)
+        os.path.basename(self._off_filename)[:16]
+        return self._beamtime_user_output_dir(os.path.basename(self._off_filename)[:16], make=make)
 
     def _tes_log_dir(self, make=True):
         dirname = os.path.join(os.path.dirname(self._off_filename),"logs")
@@ -536,7 +541,9 @@ class TESScanner():
         # one set goes to the beamtime directory for user consumption
         # another set lives with the off files for convenience
         assert log_name in ["scan", "calibration"]
+        # user log is supposed to provide one stop shop to get an overview of all the data taken
         filename1 = os.path.join(self._user_log_dir(), f"{log_name}{log_num:04d}.json")
+        # tes_log_dir lives right inside the ljh/off folder
         filename2 = os.path.join(self._tes_log_dir(), f"{log_name}{log_num:04d}.json")
         if not self._overwrite:
             assert not os.path.isfile(filename1), f"{filename1} already exists"
@@ -548,7 +555,7 @@ class TESScanner():
             raise Exception("invalid drift plan")
 
     def _scan_user_output_dir(self, scan_num, subdir = None, make = False):
-        dirname = self._beamtime_user_output_dir(f"scan{scan_num:04d}", make = make)
+        dirname = self._beamtime_user_output_dir(os.path.join(os.path.basename(self._off_filename)[:16],f"scan{scan_num:04d}"), make = make)
         if subdir is not None:
             dirname = os.path.join(dirname, subdir)
         if make:

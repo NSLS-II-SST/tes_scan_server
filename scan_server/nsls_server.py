@@ -1,4 +1,4 @@
-from scan_server import TESScanner, DastardClient, DastardListener, rpc_server, NSLSExtra
+from scan_server import TESScanner, DastardClient, DastardListener, rpc_server, NSLSExtra, CringeDastardSettings
 import os
 from pathlib import Path
 from scan_server import nsls_extras
@@ -19,6 +19,14 @@ def start():
     address = ""
     port = 4000
     time_human = rpc_server.time_human()
+    cdsettings = CringeDastardSettings(
+        record_nsamples = 2000,
+        record_npresamples = 1000, 
+        trigger_threshold = -100,
+        trigger_n_monotonic = 6, 
+        write_ljh = True,
+        write_off = True
+    )
 
     # ideally we would set the beamline specific stuff here
     # record_nsamples = 2000
@@ -32,7 +40,7 @@ def start():
     dastard = DastardClient((dastard_host, dastard_port), listener = dastard_listener)#,
     #pulse_trigger_params = None, noise_trigger_params = None)
     bg_log_file = open(os.path.join(server_log_dir, f"{time_human}_bg.log"), 'a')
-    scanner = TESScanner(dastard, beamtime_id, base_user_output_dir, bg_log_file, write_ljh=True, write_off=False)
+    scanner = TESScanner(dastard, beamtime_id, base_user_output_dir, bg_log_file, cdsettings=cdsettings)
     server_log_filename = os.path.join(server_log_dir, f"{time_human}.log")
     dispatch = rpc_server.get_dispatch_from(scanner)
     dispatch.update(rpc_server.get_dispatch_from(NSLSExtra()))

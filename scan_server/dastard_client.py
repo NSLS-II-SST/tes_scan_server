@@ -227,7 +227,7 @@ class DastardClient():
             #         "all fb channelIndices on a lancero source are odd, we shouldn't load projectors for even channelIndices")
         return nameNumberToIndex
 
-    def set_pulse_trigger_all_chans(self):
+    def set_pulse_trigger_all_chans(self, threshold, n_monotone):
         name_number_index = self.get_name_to_number_index()
 
         config = {'ChannelIndices': list(name_number_index.values()), 

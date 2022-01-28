@@ -1,4 +1,4 @@
-from .tes_scanner import ScannerState, DataScan, TESScanner, CalibrationScan
+from .tes_scanner import ScannerState, DataScan, TESScanner, CalibrationScan, CringeDastardSettings
 from .dastard_client import DastardClient, DastardListener, DastardError
 from . import rpc_server
 
