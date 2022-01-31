@@ -5,9 +5,9 @@ import socket
 import collections
 from collections import OrderedDict
 import h5py
-from dastardcommander.projectors import toMatBase64
 from typing import Union
 import time
+import numpy as np
 
 
 class DastardListener():
@@ -328,3 +328,19 @@ def getProjectorConfigs(filename, nameNumberToIndex):
             }
         out[nameNumber] = config
     return out
+
+def toMatBase64(array):
+    """
+    returns s,v
+    s - a base64 encoded string containing the bytes in a format compatible with
+    gonum.mat.Dense.MarshalBinary, header version 1
+    v - the value that was base64 encoded, is of a custom np.dtype specific to the length of the projectors
+    array - an np.array with dtype float64 (or convertable to float64)
+    """
+    nrow, ncol = array.shape
+    dt = np.dtype([('version', np.uint32), ('magic', np.uint8, (4,)), ("nrow", np.int64),
+                   ("ncol", np.int64), ("zeros", np.int64, 2), ("data", np.float64, nrow*ncol)])
+    a = np.array([(1, [ord("G"), ord("F"), ord("A"), 0], nrow, ncol, [0, 0], array.ravel())], dt)
+    s_bytes = base64.b64encode(a)
+    s = s_bytes.decode(encoding="ascii")
+    return s, a[0]
