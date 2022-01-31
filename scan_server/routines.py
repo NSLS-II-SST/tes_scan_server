@@ -46,7 +46,6 @@ def ssrl_10_1_mix_cal(cal_number, data, attr, calibratedName):
     data.setDefaultBinsize(0.5)
 
     cal_state = f"CAL{cal_number}"
-    print(cal_state, "(*#*$*#$*@*#$*@#*$*")
     ds = data.firstGoodChannel()
     line_names = ["CKAlpha", "NKAlpha", "OKAlpha", "FeLAlpha", "NiLAlpha", "CuLAlpha"]
     ds.learnCalibrationPlanFromEnergiesAndPeaks(attr=attr, states=cal_state, ph_fwhm=30, line_names=line_names, maxacc=0.015)

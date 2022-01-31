@@ -110,7 +110,7 @@ def test_tes_scanner():
         cal1 = CalibrationScan.from_json(f.read())
     assert cal1 != cal0
 
-    with open(os.path.join(base_user_output_dir, "beamtime_test", "logs", "scan0001.json"), "r") as f:
+    with open(os.path.join(util.ssrl_dir, "logs", "scan0001.json"), "r") as f:
         scan = DataScan.from_json(f.read())
     assert scan._ended
     #assert scan.previous_cal_log == cal0
@@ -124,7 +124,8 @@ def test_tes_scanner():
     assert r == "previous process still running"
     scanner._background_process.wait(timeout=30)
 
-    assert os.path.isfile(os.path.join(base_user_output_dir, "beamtime_test/scan0002/scan0002_hist2d.png"))
+    assert os.path.isfile(os.path.join(scanner._scan_user_output_dir(2), "scan0002_hist2d.png"))
+
 
 def test_scan():
     scan = DataScan(var_name="mono", var_unit="eV", scan_num=0, beamtime_id="test_Beamtime", 
@@ -147,7 +148,7 @@ def test_scan():
 
 @pytest.mark.dependency(depends=["test_tes_scanner"])
 def test_post_process_pieces():
-    beamtime_dir = os.path.join(util.ssrl_dir, "base_user_output_dir", "beamtime_test")
+    beamtime_dir = os.path.join(util.ssrl_dir, "logs")
     scans, calibrations = post_process.get_scans_and_calibrations(beamtime_dir)
     # test_test_scanner creates user output, which we don't want to mess with
     # so to test logic about if we should process, we will change user_output_dir 

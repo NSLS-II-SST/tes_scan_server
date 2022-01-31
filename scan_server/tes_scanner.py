@@ -268,6 +268,7 @@ class TESScanner():
             write_off = self._cdsettings.write_off
         self._state.file_start()
         self._off_filename = self._dastard.start_file(write_ljh, write_off, path)
+        self._log_date = os.path.basename(self._off_filename)[:8]
         return self._off_filename
         # dastard lazily creates off files when it has data to write
         # so we need to wait to open the off files until some time has
@@ -466,7 +467,7 @@ class TESScanner():
         #a, b = self.roi_counts_start_unixnano, time_unixnano()
         #self.roi_counts_start_unixnano = None
         if self.calibration_state == "no_calibration":
-            retu_rn 
+            return 
         data = self._get_data()
         roi_names = self._last_scan.roi.keys()
         attr = 'energy'
@@ -492,7 +493,7 @@ class TESScanner():
             isdone = self._background_process.poll() is not None
             if not isdone:
                 return "previous process still running"
-        args = ["process_scans", self._beamtime_user_output_dir(), f"--max_channels={_max_channels}"]
+        args = ["process_scans", self._user_log_dir(), f"--max_channels={_max_channels}"]
         print(args)
         self._background_process = subprocess.Popen(args, stdout = self._background_process_log_file, stderr=subprocess.STDOUT)
         return "started new process"
@@ -527,8 +528,7 @@ class TESScanner():
         return 0
             
     def _user_log_dir(self, make=True):
-        os.path.basename(self._off_filename)[:16]
-        return self._beamtime_user_output_dir(os.path.basename(self._off_filename)[:16], make=make)
+        return self._beamtime_user_output_dir(self._log_date, make=make)
 
     def _tes_log_dir(self, make=True):
         dirname = os.path.join(os.path.dirname(self._off_filename),"logs")
@@ -555,13 +555,13 @@ class TESScanner():
             raise Exception("invalid drift plan")
 
     def _scan_user_output_dir(self, scan_num, subdir = None, make = False):
-        dirname = self._beamtime_user_output_dir(os.path.join(os.path.basename(self._off_filename)[:16],f"scan{scan_num:04d}"), make = make)
+        dirname = self._beamtime_user_output_dir(os.path.join(self._log_date,f"scan{scan_num:04d}"), make = make)
         if subdir is not None:
             dirname = os.path.join(dirname, subdir)
         if make:
             Path(dirname).mkdir(parents=True, exist_ok=True)
         return dirname
-
+        
 def time_unixnano():
     return int(1e9*time.time())
 
