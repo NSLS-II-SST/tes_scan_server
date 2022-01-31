@@ -9,8 +9,8 @@ setup(
     author_email='galen.oneil@nist.gov',
     python_requires='>=3.5',
     description="ScanServer helps automate synchrotron beamlines with a TES",
-    install_requires=["python-statemachine", "pytest", "requests", "numpy", "pyyaml",
-    "dataclasses_json", "pytest-dependency", "argparse",
+    install_requires=["python-statemachine", "pytest", "numpy", "PyYAML",
+    "dataclasses_json", "argparse", "pytest-dependency",
     "mass @ git+ssh://git@bitbucket.org/joe_fowler/mass.git@master#egg=mass", "zmq"],
     license="MIT license",
     include_package_data=True,
@@ -25,6 +25,8 @@ setup(
     entry_points={
         'console_scripts': [
             'ssrl_10_1_server = scan_server.ssrl_server:start',
+            'nsls_server = scan_server.nsls_server:start',
+            'tes_sim_server = scan_server.sim_server:start',
             'process_scans = scan_server.post_process:post_process_script'
         ],
     }

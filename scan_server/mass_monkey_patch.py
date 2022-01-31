@@ -1,7 +1,20 @@
 import mass
 import numpy as np
 from mass.calibration import algorithms
+import h5py 
 
+mass.lineshape_references["made up"] = "Jamie and Galen made this up using reference energies"
+mass.addline("Fe",
+"LAlpha",
+"oxide",
+"made up", 
+None,
+mass.STANDARD_FEATURES["FeLAlpha"],
+[mass.STANDARD_FEATURES["FeLAlpha"], mass.STANDARD_FEATURES["FeLBeta"]],
+np.array([3, 3]),
+np.array([2,1]),
+mass.calibration.LORENTZIAN_PEAK_HEIGHT,
+)
 
 def unixnanos_to_state_slices(ds_unixnano, starts_unixnano, ends_unixnano):
     starts_ind = np.searchsorted(ds_unixnano, starts_unixnano)
@@ -25,14 +38,36 @@ def data_histWithUnixnanos(self, bin_edges, attr, starts_unixnano, ends_unixnano
 
 mass.off.ChannelGroup.histWithUnixnanos = data_histWithUnixnanos
 
-def ds_learnCalibrationPlanFromEnergiesAndPeaks(self, attr, states, ph_fwhm, line_names):
+def ds_learnCalibrationPlanFromEnergiesAndPeaks(self, attr, states, ph_fwhm, line_names, maxacc):
     peak_ph_vals, _peak_heights = algorithms.find_local_maxima(self.getAttr(attr, indsOrStates=states), ph_fwhm)
-    _name_e, energies_out, opt_assignments = algorithms.find_opt_assignment(peak_ph_vals, line_names)
+    _name_e, energies_out, opt_assignments = algorithms.find_opt_assignment(peak_ph_vals, line_names, maxacc=maxacc)
 
     self.calibrationPlanInit(attr)
     for ph, name in zip(opt_assignments, _name_e):
         self.calibrationPlanAddPoint(ph, name, states=states)
 mass.off.Channel.learnCalibrationPlanFromEnergiesAndPeaks = ds_learnCalibrationPlanFromEnergiesAndPeaks
+
+def data_calibrationLoadFromHDF5Simple(self, h5name):
+    print(f"loading calibration from {h5name}")
+    with h5py.File(h5name,"r") as h5:
+        for channum_str in h5.keys():
+            cal = mass.calibration.EnergyCalibration.load_from_hdf5(h5, channum_str)
+            channum = int(channum_str)
+            ds = self[channum]
+            ds.recipes.add("energy", cal, ["filtValue"], overwrite=False)
+    # set other channels bad
+    for ds in self.values():
+        if not "energy" in ds.recipes.keys():
+            ds.markBad("no loaded calibration")
+mass.off.ChannelGroup.calibrationLoadFromHDF5Simple = data_calibrationLoadFromHDF5Simple
+
+def data_calibrationSaveToHDF5Simple(self, h5name):
+    print(f"writing calibration to {h5name}")
+    with h5py.File(h5name,"w") as h5:
+        for ds in self.values():
+            cal = cal=ds.recipes["energy"].f
+            cal.save_to_hdf5(h5, f"{ds.channum}")
+
 
 # from collections import OrderedDict
 # from typing import List, Dict
