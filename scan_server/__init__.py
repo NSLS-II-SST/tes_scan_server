@@ -3,4 +3,9 @@ from .dastard_client import DastardClient, DastardListener, DastardError
 from . import rpc_server
 
 from . import mass_monkey_patch
-from .nsls_extras import NSLSExtra
+try:
+    from .nsls_extras import NSLSExtra
+except:
+    print("""WARNING: couldn't import NSLSExtra, this is fine during tests, but
+    a problem for actual beamline use. it's becaue it depends on instruments in nistqsptdm
+    and it feels like maybe it shouldnt?""")
