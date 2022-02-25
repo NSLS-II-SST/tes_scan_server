@@ -16,7 +16,7 @@ def nsls_mix_980eV(cal_number, data, attr, calibratedName):
     data.alignToReferenceChannel(ds, attr, np.arange(0, 20000,  10))
     data.calibrateFollowingPlan(attr, calibratedName,
         dlo=20, dhi=25, overwriteRecipe=True)
-    data.calibrationSaveToHDF5Simple("/home/pcuser/.scan_server/nsls_server_saved_calibration.hdf5")
+    data.calibrationSaveToHDF5Simple("/home/xf07id1/.scan_server/nsls_server_saved_calibration.hdf5")
     success = True
     return success
 

@@ -129,7 +129,7 @@ class DastardClient():
         self._call("SourceControl.SendAllStatus", "dummy")
         time.sleep(0.5) # wait to get all the statuses back
 
-    def start_file(self, ljh22, off, path=None):
+    def start_file(self, ljh22, off, path=None, filenamePattern=None):
         params = {"Request": "Start",
         "WriteLJH22": ljh22,
         "WriteLJH3": False,
@@ -137,6 +137,8 @@ class DastardClient():
         }
         if path is not None:
             params["Path"] = path
+        if filenamePattern is not None:
+            params["FilenamePattern"] = filenamePattern
         response = self._call("SourceControl.WriteControl", params)
         contents = self.listener.get_message_with_topic("WRITING")
         if not contents["Active"]:

@@ -2,6 +2,7 @@ from statemachine import StateMachine, State
 from typing import List, Any
 import numpy as np
 import time
+import datetime
 from . import routines
 import mass
 from mass.off import ChannelGroup, getOffFileListFromOneFile, Channel, labelPeak, labelPeaks
@@ -56,11 +57,11 @@ class BaseScan():
         self.var_values.append(float(scan_var))
         if extra is not None and extra != {}:
             assert isinstance(extra, dict)
-            idx = str(len(self.epoch_time_start_s))
+            # idx = str(len(self.epoch_time_start_s))
             self.point_extras[idx] = extra
-        print(f"{self.epoch_time_start_s=}")
+        #print(f"{self.epoch_time_start_s}")
         self.epoch_time_start_s.append(epoch_time_s)
-        print(f"{self.epoch_time_start_s=}")
+        #print(f"{self.epoch_time_start_s}")
 
     def point_end(self, epoch_time_s):
         assert len(self.epoch_time_start_s) - 1 == len(self.epoch_time_end_s)
@@ -216,6 +217,7 @@ class TESScanner():
 
     def _reset(self):
         self._last_scan = None
+        self._log_date = datetime.datetime.today().strftime("%Y%m%2d")
         self._scan = None
         self._data = None
         self._roi = {"tfy": (self._tfy_llim, self._tfy_ulim)}
@@ -260,16 +262,34 @@ class TESScanner():
     def _advance_scan_num(self):
         self._scan_num = self.scan_num + 1
         return self._scan_num
+
+    def getFilenamePattern(self, path):
+        """
+        path : /nsls2/data/sst1/legacy/ucal/raw/%Y/%m/%2d
+        """
+        today = datetime.datetime.today()
+        datedir = today.strftime(path)
+        for i in range(1000):
+            sampledir = join(datedir, f"{i:04d}")
+            if not exists(sampledir):
+                os.makedirs(sampledir)
+                filepattern = join(sampledir, today.strftime(f"%Y%m%2d_run{i:04d}_%%s.%%s"))
+                return filepattern
+        raise ValueError("Could not find a suitable directory name")
     
     # Dastard operations
-    def file_start(self, path=None, write_ljh=None, write_off=None):
+    def file_start(self, path=None, write_ljh=None, write_off=None, setFilenamePattern=False):
         """tell dastard to start a new file, must be called before any calibration or scan functions"""
         if write_ljh is None:
             write_ljh = self._cdsettings.write_ljh
         if write_off is None:
             write_off = self._cdsettings.write_off
         self._state.file_start()
-        self._off_filename = self._dastard.start_file(write_ljh, write_off, path)
+        if setFilenamePattern:
+            filenamePattern = self.getFilenamePattern(path)
+        else:
+            filenamePattern = None
+        self._off_filename = self._dastard.start_file(write_ljh, write_off, path, filenamePattern)
         self._log_date = os.path.basename(self._off_filename)[:8]
         return self._off_filename
         # dastard lazily creates off files when it has data to write
@@ -282,7 +302,7 @@ class TESScanner():
         self._dastard.stop_writing()
         self._reset()
 
-    def set_projectors(self, projector_filename="/home/pcuser/.scan_server/nsls_projectors.hdf5"):
+    def set_projectors(self, projector_filename="/home/xf07id1/.scan_server/nsls_projectors.hdf5"):
         self._dastard.set_projectors(projector_filename)
 
     def set_pulse_triggers(self):
@@ -321,13 +341,15 @@ class TESScanner():
         if _epoch_time_s_for_test is None:
             _epoch_time_s_for_test = time.time()
         self._scan.point_start(scan_var, _epoch_time_s_for_test, extra)
+        return _epoch_time_s_for_test
 
     def scan_point_end(self, _epoch_time_s_for_test=None):
         self._state.scan_point_end()
         if _epoch_time_s_for_test is None:
             _epoch_time_s_for_test = time.time()
         self._scan.point_end(_epoch_time_s_for_test)
-
+        return _epoch_time_s_for_test
+    
     def scan_end(self, _try_post_processing=False):
         self._state.scan_end()
         self._scan.end()
@@ -372,7 +394,7 @@ class TESScanner():
     def calibration_load_from_disk(self):
         # an alternate way of getting a calibration
         data = self._get_data()
-        data.calibrationLoadFromHDF5Simple("/home/pcuser/.scan_server/nsls_server_saved_calibration.hdf5")
+        data.calibrationLoadFromHDF5Simple("/home/xf07id1/.scan_server/nsls_server_saved_calibration.hdf5")
         self.calibration_state = "calibrated"
 
     def _calibration_apply_routine(self, routine, cal_number, data):
@@ -538,25 +560,25 @@ class TESScanner():
         return dirname    
     
     def _get_current_scan_num_from_logs(self):
-        # log_dir = self._tes_log_dir(make=False)
-        # if exists(log_dir):
-        #     scans = glob(join(log_dir, "scan*.json"))
-        #     cals = glob(join(log_dir, "calibration*.json"))
-        #     log_names = scans + cals
-        #     nums = []
-        #     for name in log_names:
-        #         try:
-        #             nums.append(int(name[-9:-5]))
-        #         except ValueError:
-        #             pass
-        #     if nums == []:
-        #         scan_num = 0
-        #     else:
-        #         scan_num = max(nums) + 1
-        # else:
-        #     scan_num = 0
-        # return scan_num
-        return 0
+        log_dir = self._user_log_dir(make=False)
+        if exists(log_dir):
+            scans = glob(join(log_dir, "scan*.json"))
+            cals = glob(join(log_dir, "calibration*.json"))
+            log_names = scans + cals
+            nums = []
+            for name in log_names:
+                try:
+                    nums.append(int(name[-9:-5]))
+                except ValueError:
+                    pass
+            if nums == []:
+                scan_num = 0
+            else:
+                scan_num = max(nums) + 1
+        else:
+            scan_num = 0
+        return scan_num
+        #return 0
             
     def _user_log_dir(self, make=True):
         return self._beamtime_user_output_dir(self._log_date, make=make)
