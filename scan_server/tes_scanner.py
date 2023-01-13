@@ -223,6 +223,7 @@ class TESScanner():
         self._roi = {"tfy": (self._tfy_llim, self._tfy_ulim)}
         self._cal_number: int = -1
         self._scan_num = None
+        self._scan_str = ""
         self._overwrite = False
         self._calibration_to_routine: List[str] = [] 
         self.calibration_state = "no_calibration"
@@ -243,7 +244,11 @@ class TESScanner():
             return self._roi
         else:
             return self._roi.get(key, None)
-        
+
+    @property
+    def scan_str(self):
+        return self._scan_str
+    
     @property
     def scan_num(self):
         if self._scan_num is None:
@@ -258,6 +263,10 @@ class TESScanner():
     @property
     def next_scan_num(self):
         return self.scan_num + 1
+
+    @property
+    def cal_number(self):
+        return self._cal_number
     
     def _advance_scan_num(self):
         self._scan_num = self.scan_num + 1
@@ -265,7 +274,7 @@ class TESScanner():
 
     def getFilenamePattern(self, path):
         """
-        path : /nsls2/data/sst1/legacy/ucal/raw/%Y/%m/%2d
+        path : /nsls2/data/sst/legacy/ucal/raw/%Y/%m/%2d
         """
         today = datetime.datetime.today()
         datedir = today.strftime(path)
@@ -333,7 +342,8 @@ class TESScanner():
         self._scan = DataScan(var_name, var_unit, scan_num, self._beamtime_id, sample_id, 
             sample_desc, extra, data_path, drift_correction_plan=drift_correction_plan,
             cal_number=self._cal_number, roi=self._roi, user_output_dir=self._scan_user_output_dir(scan_num))
-        self._dastard.set_experiment_state(f"SCAN{scan_num}")
+        self._scan_str = f"SCAN{scan_num}"
+        self._dastard.set_experiment_state(self.scan_str)
 
         
     def scan_point_start(self, scan_var: float, _epoch_time_s_for_test=None, extra: dict=None):
@@ -359,6 +369,7 @@ class TESScanner():
         self._last_scan = self._scan
         self._advance_scan_num()
         self._scan = None
+        self._scan_str = ""
         self._dastard.set_experiment_state("PAUSE")
         if _try_post_processing:
             self.start_post_processing()
@@ -381,7 +392,8 @@ class TESScanner():
                                     sample_desc, extra, data_path, 
                                     drift_correction_plan, routine=routine,
                                     roi=self._roi, user_output_dir=self._scan_user_output_dir(scan_num))
-        self._dastard.set_experiment_state(f"CAL{scan_num}")
+        self._scan_str = f"CAL{scan_num}"
+        self._dastard.set_experiment_state(self.scan_str)
         self._cal_number = scan_num
         
 
@@ -434,16 +446,6 @@ class TESScanner():
     def roi_start_counts(self):
         """take a timestamp for future reference"""
         self.roi_counts_start_unixnano = time_unixnano()
-    
-    def roi_get_counts(self):
-        """return a list of counts in each ROI since roi_start_counts was called
-        must always call roi_start_counts and roi_get_counts in pairs"""
-        assert self.roi_counts_start_unixnano is not None, "first call set_rois, then start_rois_counts, roi_start_counts, then roi_get_counts"
-        assert self.rois_bin_edges is not None, "rois_bin_edges is None: first call set_rois, then start_rois_counts, roi_start_counts, then roi_get_counts"
-        a, b = self.roi_counts_start_unixnano, time_unixnano()
-        self.roi_counts_start_unixnano = None
-        bin_centers, counts = self._get_data().histWithUnixnanos(self.rois_bin_edges, "energy", [a], [b])
-        return counts[::2]
 
     def roi_get_counts(self):
         """return a dictionary of counts in each ROI for the last scan epoch time.

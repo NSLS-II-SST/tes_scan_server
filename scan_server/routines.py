@@ -2,15 +2,31 @@ import numpy as np
 import pickle
 from mass.calibration import algorithms
 import mass
+from mass.off import ChannelGroup, getOffFileListFromOneFile
 from scan_server.mass_monkey_patch import unixnanos_to_state_slices
+import argparse
 
+def run_cal_routine():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("filename", help="Path to an off file that we will cal")
+    parser.add_argument("states", type=int, help="One state number to cal")
+    parser.add_argument("--attr", default="filtValue")
+    parser.add_argument("--calibratedName", default="energy")
+    args = parser.parse_args()
+    data = ChannelGroup(getOffFileListFromOneFile(args.filename))
+    nsls_mix_980eV(args.states, data, args.attr, args.calibratedName)
+    
 
 def nsls_mix_980eV(cal_number, data, attr, calibratedName):
     data.setDefaultBinsize(0.2)
     cal_state = f"CAL{cal_number}"
     ds = data.firstGoodChannel()
     ds.learnCalibrationPlanFromEnergiesAndPeaks(attr=attr, 
-    ph_fwhm=50, states=cal_state, line_names=["CKAlpha", "NKAlpha", "OKAlpha", "FeLAlpha", "NiLAlpha", 'CuLAlpha'])
+                                                ph_fwhm=50, states=cal_state,
+                                                line_names=["CKAlpha", "NKAlpha",
+                                                            "OKAlpha", "FeLAlpha",
+                                                            "NiLAlpha", 'CuLAlpha'],
+                                                maxacc=0.1)
     ds.calibrateFollowingPlan(attr, overwriteRecipe=True, dlo=20, dhi=25)
     # ds.diagnoseCalibration()
     data.alignToReferenceChannel(ds, attr, np.arange(0, 20000,  10))

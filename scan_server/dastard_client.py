@@ -8,7 +8,7 @@ import h5py
 from typing import Union
 import time
 import numpy as np
-
+import base64
 
 class DastardListener():
     def __init__(self, host, port):

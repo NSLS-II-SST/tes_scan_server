@@ -31,9 +31,12 @@ mass.off.Channel.unixnanoToStates = ds_unixnanoToStates
 def data_histWithUnixnanos(self, bin_edges, attr, starts_unixnano, ends_unixnano):
     counts = np.zeros(len(bin_edges)-1, dtype="int64")
     for ds in self.values():
-        states = ds.unixnanoToStates(starts_unixnano, ends_unixnano)
-        bin_centers, _counts = ds.hist(bin_edges, attr, states=states)
-        counts += _counts
+        try:
+            states = ds.unixnanoToStates(starts_unixnano, ends_unixnano)
+            bin_centers, _counts = ds.hist(bin_edges, attr, states=states)
+            counts += _counts
+        except:
+            pass
     return bin_centers, counts
 
 mass.off.ChannelGroup.histWithUnixnanos = data_histWithUnixnanos
@@ -65,10 +68,10 @@ def data_calibrationSaveToHDF5Simple(self, h5name):
     print(f"writing calibration to {h5name}")
     with h5py.File(h5name,"w") as h5:
         for ds in self.values():
-            cal = cal=ds.recipes["energy"].f
+            cal = ds.recipes["energy"].f
             cal.save_to_hdf5(h5, f"{ds.channum}")
 
-
+mass.off.ChannelGroup.calibrationSaveToHDF5Simple = data_calibrationSaveToHDF5Simple
 # from collections import OrderedDict
 # from typing import List, Dict
 

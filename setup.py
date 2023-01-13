@@ -27,7 +27,8 @@ setup(
             'ssrl_10_1_server = scan_server.ssrl_server:start',
             'nsls_server = scan_server.nsls_server:start',
             'tes_sim_server = scan_server.sim_server:start',
-            'process_scans = scan_server.post_process:post_process_script'
+            'process_scans = scan_server.post_process:post_process_script',
+            'run_cal_routine = scan_server.routines:run_cal_routine'
         ],
     }
 )

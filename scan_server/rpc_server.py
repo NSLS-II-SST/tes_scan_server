@@ -17,7 +17,7 @@ import shutil
 def time_human(t=None):
     if t is None:
         t = time.localtime(time.time())
-    return time.strftime("%Y%m%d_%H:%M:%S", t)
+    return time.strftime("%Y%m%d_%H:%M:%S.%f", t)[:-3]
 
 def call_method_from_data(data, dispatch, no_traceback_error_types):
     try:
