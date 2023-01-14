@@ -315,6 +315,11 @@ class TESScanner():
         self._dastard.stop_writing()
         self._reset()
 
+    def make_projectors(self, noise_file, pulse_file):
+        args = ["make_projectors", "-rio", "/home/xf07id1/.scan_server/nsls_projectors.hdf5", pulse_file, noise_file]
+        print(args)
+        subprocess.run(args)
+
     def set_projectors(self, projector_filename="/home/xf07id1/.scan_server/nsls_projectors.hdf5"):
         self._dastard.set_projectors(projector_filename)
 
