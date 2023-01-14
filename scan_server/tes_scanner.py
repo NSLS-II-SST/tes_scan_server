@@ -11,7 +11,7 @@ from dataclasses_json import dataclass_json
 import io
 import pylab as plt
 import os
-from os.path import join, exists, basename
+from os.path import join, exists, basename, dirname
 from pathlib import Path
 from . import mass_monkey_patch
 import h5py
@@ -310,15 +310,17 @@ class TESScanner():
         # passed from calling file_start
         # so we must always access through _get_data (_hides it from the rpc)
 
-    def file_end(self):
+    def file_end(self, _try_rsync_data=False, **rsync_kwargs):
         self._state.file_end()
         self._dastard.stop_writing()
+        if _try_rsync_data:
+            self.rsync_data(**rsync_kwargs)
         self._reset()
 
     def make_projectors(self, noise_file, pulse_file):
         args = ["make_projectors", "-rio", "/home/xf07id1/.scan_server/nsls_projectors.hdf5", pulse_file, noise_file]
         print(args)
-        subprocess.run(args)
+        subprocess.run(args, stdout=self._background_process_log_file, stderr=subprocess.STDOUT)
 
     def set_projectors(self, projector_filename="/home/xf07id1/.scan_server/nsls_projectors.hdf5"):
         self._dastard.set_projectors(projector_filename)
@@ -373,7 +375,7 @@ class TESScanner():
         self._scan.point_end(_epoch_time_s_for_test)
         return _epoch_time_s_for_test
 
-    def scan_end(self, _try_post_processing=False):
+    def scan_end(self, _try_post_processing=False, _try_rsync_data=False, **rsync_kwargs):
         self._state.scan_end()
         self._scan.end()
         scan_name = "calibration" if self._scan.calibration else "scan"
@@ -386,7 +388,9 @@ class TESScanner():
         self._dastard.set_experiment_state("PAUSE")
         if _try_post_processing:
             self.start_post_processing()
-
+        if _try_rsync_data:
+            self.rsync_data(**rsync_kwargs)
+        
     # Calibration Functions
     def calibration_start(self, var_name: str, var_unit: str, sample_id: int,
                           sample_desc: str, routine: str, extra: dict = {},
@@ -563,6 +567,16 @@ class TESScanner():
         self._background_process = subprocess.Popen(args, stdout=self._background_process_log_file, stderr=subprocess.STDOUT)
         return "started new process"
 
+    def rsync_data(self, dest="/nsls2/data/sst/legacy/ucal/raw/%Y/%m/%2d", filename=None):
+        if filename is None:
+            filename = self._off_filename
+        from_dir = dirname(filename)
+        date = datetime.datetime.strptime(basename(dirname(from_dir)), "%Y%m%d")
+        to_dir = datetime.datetime.strftime(date, dest)
+        args = ["rsync", "-vrt", "--append", from_dir, to_dir]
+        print(args)
+        subprocess.Popen(args)
+        
     def _beamtime_user_output_dir(self, subdir=None, make=True):
         dirname = os.path.join(self._base_user_output_dir, f"beamtime_{self._beamtime_id}")
         if subdir is not None:
