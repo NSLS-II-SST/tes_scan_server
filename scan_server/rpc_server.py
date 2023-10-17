@@ -3,7 +3,6 @@
 # our responses are simpler than json text, and we don't require the "jsonrpc"="2.0" key
 
 import time
-import os
 import socket
 import json
 from inspect import signature
@@ -12,12 +11,11 @@ import textwrap
 import shutil
 
 
-
-
 def time_human(t=None):
     if t is None:
         t = time.localtime(time.time())
     return time.strftime("%Y%m%d_%H:%M:%S.%f", t)[:-3]
+
 
 def call_method_from_data(data, dispatch, no_traceback_error_types):
     try:
@@ -52,14 +50,14 @@ def call_method_from_data(data, dispatch, no_traceback_error_types):
             print("TRACEBACK DONE")
         return _id, method_name, args, kwargs, None, f"Calling Exception: method={method_name}: {e}"
 
+
 def make_simple_response(_id, method_name, args, kwargs, result, error):
     if error is not None:
-        #response = f"Error: {error}"
         response = json.dumps({"response": error, "success": False})
     else:
-        #response = f"{result}"
         response = json.dumps({"response": result, "success": True})
     return response
+
 
 def get_message(sock):
     try:
@@ -70,6 +68,7 @@ def get_message(sock):
             return msg
     except ConnectionResetError:
         return None
+
 
 def handle_one_message(sock, data, dispatch, verbose, no_traceback_error_types):
     # following https://gist.github.com/limingzju/6483619
@@ -93,6 +92,7 @@ def handle_one_message(sock, data, dispatch, verbose, no_traceback_error_types):
         pass
     return t_human, data, response
 
+
 def make_attribute_accessor(x, a):
     def get_set_attr(*args):
         if len(args) == 0:
@@ -104,11 +104,12 @@ def make_attribute_accessor(x, a):
 
     return get_set_attr
 
+
 def get_dispatch_from(x):
     d = collections.OrderedDict()
     for m in sorted(dir(x)):
         if not m.startswith("_"):
-            if callable(getattr(x,m)):
+            if callable(getattr(x, m)):
                 d[m] = getattr(x, m)
             else:
                 d[m] = make_attribute_accessor(x, m)
@@ -131,17 +132,18 @@ def get_dispatch_from(x):
 #         print(request)
 #     return log
 
+
 def start(address, port, dispatch, verbose, log_file, no_traceback_error_types):
-    terminal_size = shutil.get_terminal_size((80, 20)) 
+    terminal_size = shutil.get_terminal_size((80, 20))
     print(f"TES Scan Server @ {address}:{port}")
     print("Ctrl-C to exit")
     print(f"Log File: {log_file.name}")
     print("methods:")
     for k, m in dispatch.items():
-        wrapped = textwrap.wrap(f"{k}{signature(m)}", width=terminal_size.columns, 
-            initial_indent="* ", subsequent_indent="\t" )
-        for l in wrapped:
-            print(l)
+        wrapped = textwrap.wrap(f"{k}{signature(m)}", width=terminal_size.columns,
+                                initial_indent="* ", subsequent_indent="\t")
+        for line in wrapped:
+            print(line)
     serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # bind the socket to a public host, and a well-known port
     serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -160,8 +162,9 @@ def start(address, port, dispatch, verbose, log_file, no_traceback_error_types):
                 if data is None:
                     print(f"data was none, breaking to wait for connection")
                     break
-                try: 
-                    a = handle_one_message(clientsocket, data, dispatch, verbose, no_traceback_error_types)  
+                try:
+                    a = handle_one_message(clientsocket, data, dispatch,
+                                           verbose, no_traceback_error_types)
                     if log_file is not None:
                         t_human, data, response = a
                         log_file.write(f"{t_human}")
@@ -176,6 +179,3 @@ def start(address, port, dispatch, verbose, log_file, no_traceback_error_types):
         if log_file is not None:
             log_file.write(f"Ctrl-C at {time_human()}\n")
         return
-    
-     
-

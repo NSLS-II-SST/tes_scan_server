@@ -1,4 +1,4 @@
-from scan_server import TESScanner, rpc_server
+from scan_server import TESScanner, rpc_server, CringeDastardSettings
 from scan_server.fake_dastard_client import FakeDastardClient
 import os
 from pathlib import Path
@@ -6,6 +6,7 @@ from pathlib import Path
 # needed for exception filtering
 import scan_server
 import statemachine
+
 
 def start():
     beamtime_id = 1
@@ -17,18 +18,26 @@ def start():
     address = ""
     port = 4000
     time_human = rpc_server.time_human()
+    cdsettings = CringeDastardSettings(
+        record_nsamples=2000,
+        record_npresamples=1000,
+        trigger_threshold=-100,
+        trigger_n_monotonic=6,
+        write_ljh=True,
+        write_off=True
+    )
 
     no_traceback_error_types = [scan_server.dastard_client.DastardError, statemachine.exceptions.TransitionNotAllowed]
 
-    #dastard_listener = DastardListener(dastard_host, dastard_port)
-    dastard = FakeDastardClient(verbose=True)#,
-    #pulse_trigger_params = None, noise_trigger_params = None)
+    # dastard_listener = DastardListener(dastard_host, dastard_port)
+    dastard = FakeDastardClient(verbose=True)  # ,
+    # pulse_trigger_params = None, noise_trigger_params = None)
     bg_log_file = open(os.path.join(server_log_dir, f"{time_human}_bg.log"), 'a')
-    scanner = TESScanner(dastard, beamtime_id, base_user_output_dir, bg_log_file)
+    scanner = TESScanner(dastard, beamtime_id, base_user_output_dir, bg_log_file,
+                         cdsettings=cdsettings)
     server_log_filename = os.path.join(server_log_dir, f"{time_human}.log")
     dispatch = rpc_server.get_dispatch_from(scanner)
     print("Starting Simulated Scan Server")
     with open(server_log_filename, "w") as f:
-        rpc_server.start(address, port, dispatch, verbose=True, log_file=f, 
-            no_traceback_error_types=no_traceback_error_types)
-
+        rpc_server.start(address, port, dispatch, verbose=True, log_file=f,
+                         no_traceback_error_types=no_traceback_error_types)

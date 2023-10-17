@@ -10,6 +10,7 @@ import time
 import numpy as np
 import base64
 
+
 class DastardListener():
     def __init__(self, host, port):
         context = zmq.Context()
@@ -36,7 +37,7 @@ class DastardListener():
         contents = json.loads(contents_str.decode())
         self.messages_seen[topic] += 1
         return topic, contents
-    
+
     def _update_messages(self):
         """get all messages form dastard, store them in self.cache"""
         while True:
@@ -45,11 +46,11 @@ class DastardListener():
                 # no message
                 return None
             topic, contents = r
-            self.cache[topic]=contents
+            self.cache[topic] = contents
 
     def get_message_with_topic(self, target_topic: str) -> Union[list, dict]:
         """ first update messages, which updates self.cache
-        then retrieve the latest message for a given topic 
+        then retrieve the latest message for a given topic
         from self.cache
         """
         # print("get_message_with_topic")
@@ -58,25 +59,25 @@ class DastardListener():
         return contents
 
 
-
 class DastardError(Exception):
     pass
 
+
 class DastardClient():
     """
-    Assumptions: 
+    Assumptions:
     1. Dastard has just been started.
     2. A source has just been stareted.
     3. Projectors have been loaded.
     4. Triggers have been set.
     5. (implied by above) Dastard is not writing.
-    
+
     Potential Future:
-    
+
     We could instead reduce the assumptions to:
     1. Dastard has a source running.
     2. Dastard is not writing.
-    3. Projectors have been loaded. 
+    3. Projectors have been loaded.
     4. Triggers have been set.
 
     We may also want TESScanner to load projectors and/or set triggers.
@@ -87,7 +88,7 @@ class DastardClient():
         self.listener = listener
         self._id_iter = itertools.count()
         self._connect()
-        self._request_status() # request one set of all messages on startup
+        self._request_status()  # request one set of all messages on startup
 
     def _connect(self):
         try:
@@ -100,13 +101,13 @@ class DastardClient():
         if not isinstance(params, list):
             params = [params]
         d = {"id": next(self._id_iter),
-        "params": params,
-        "method": method_name} 
+             "params": params,
+             "method": method_name}
         return d
 
     def _call(self, method_name: str, params, verbose=True):
         msg = self._message(method_name, params)
-        if verbose: 
+        if verbose:
             print(f"Dastard Client: sending: {msg}")
         else:
             print(f"Dastard Client: calling {method_name}")
@@ -122,30 +123,29 @@ class DastardClient():
 
         if response == b"":
             raise DastardError("no communication from Dastard")
-        
+
         response = json.loads(response.decode())
-        if verbose:     
+        if verbose:
             print(f"Dastard Client: response: {response}")
         else:
             print(f"Dastard Client: got response for {method_name}")
         if not response["id"] == msg["id"]:
-            raise DastardError(f"response id does not match message id")
+            raise DastardError("response id does not match message id")
         err = response.get("error", None)
         if err is not None:
-            raise DastardError(f"""Dastard responded with error: {err}""") 
+            raise DastardError(f"""Dastard responded with error: {err}""")
         return response["result"]
 
     def _request_status(self):
-        time.sleep(0.5) # make sure our zmq side it hooked up?
+        time.sleep(0.5)  # make sure our zmq side it hooked up?
         self._call("SourceControl.SendAllStatus", "dummy")
-        time.sleep(0.5) # wait to get all the statuses back
+        time.sleep(0.5)  # wait to get all the statuses back
 
     def start_file(self, ljh22, off, path=None, filenamePattern=None):
         params = {"Request": "Start",
-        "WriteLJH22": ljh22,
-        "WriteLJH3": False,
-        "WriteOFF": off,
-        }
+                  "WriteLJH22": ljh22,
+                  "WriteLJH3": False,
+                  "WriteOFF": off}
         if path is not None:
             params["Path"] = path
         if filenamePattern is not None:
@@ -154,50 +154,58 @@ class DastardClient():
         contents = self.listener.get_message_with_topic("WRITING")
         if not contents["Active"]:
             raise DastardError(f"Response from Dastard RPC should have contents[\"Active\"]=True, but it does not\ncontents:\n{contents}")
-        self.off_filename = contents["FilenamePattern"]%("chan1","off")
+        self.off_filename = contents["FilenamePattern"] % ("chan1", "off")
         return self.off_filename
-
 
     def stop_source(self):
         response = self._call("SourceControl.Stop", "")
+        return response
 
-    def configure_simulate_pulse_source(self, nchan, sample_rate_hz, pedestal, amplitudes, samples_per_pulse):
+    def configure_simulate_pulse_source(self, nchan, sample_rate_hz, pedestal,
+                                        amplitudes, samples_per_pulse):
         params = {"Nchan": nchan,
-        "SampleRate" : sample_rate_hz,
-        "Pedestal": pedestal,
-        "Amplitudes": amplitudes,
-        "Nsamp": samples_per_pulse}
+                  "SampleRate": sample_rate_hz,
+                  "Pedestal": pedestal,
+                  "Amplitudes": amplitudes,
+                  "Nsamp": samples_per_pulse}
         response = self._call("SourceControl.ConfigureSimPulseSource", params)
+        return response
 
     def start_sim_pulse_source(self):
         response = self._call("SourceControl.Start", "SIMPULSESOURCE")
+        return response
 
     def set_experiment_state(self, state):
         params = {"Label": state,
-        "WaitForError": True}
+                  "WaitForError": True}
         response = self._call("SourceControl.SetExperimentStateLabel", params)
+        return response
 
     def set_triggers(self, full_trigger_state):
-        response = self._call("SourceControl.ConfigureTriggers", full_trigger_state)
+        response = self._call("SourceControl.ConfigureTriggers",
+                              full_trigger_state)
+        return response
 
     def start_writing(self, ljh22, off, path=None):
         params = {"Request": "Start",
-        "WriteLJH22": ljh22,
-        "WriteOff": off}
+                  "WriteLJH22": ljh22,
+                  "WriteOff": off}
         if path is not None:
             params["Path"] = path
         response = self._call("SourceControl.WriteControl", params)
-    
+        return response
+
     def stop_writing(self):
         params = {"Request": "Stop"}
         response = self._call("SourceControl.WriteControl", params)
-        contents = self.listener.get_message_with_topic("WRITING") 
- 
+        contents = self.listener.get_message_with_topic("WRITING")
+        return contents
 
     def configure_record_lengths(self, npre, nsamp):
         params = {"Nsamp": nsamp,
-        "Npre": npre}
+                  "Npre": npre}
         response = self._call("SourceControl.ConfigurePulseLengths", params)
+        return response
 
     def get_data_path(self):
         return self.off_filename
@@ -209,7 +217,8 @@ class DastardClient():
         else:
             channels_per_pixel = 1
         print(f"set_projectors founrce source_type={source_type} and therefore channels_per_pixel={channels_per_pixel}")
-        configs = getProjectorConfigs(projector_filename, self.get_name_to_number_index())
+        configs = getProjectorConfigs(projector_filename,
+                                      self.get_name_to_number_index())
         success_chans = []
         failures = OrderedDict()
         for channelIndex, config in list(configs.items()):
@@ -223,7 +232,7 @@ class DastardClient():
                 
         success = len(failures) == 0
         result = "success on channelIndices (not channelName): {}\n".format(
-        sorted(success_chans)) + "failures:\n" + json.dumps(failures, sort_keys=True, indent=4)
+            sorted(success_chans)) + "failures:\n" + json.dumps(failures, sort_keys=True, indent=4)
         print("set_projectors result")
         print(result)
 
@@ -238,7 +247,7 @@ class DastardClient():
         # print("get_channel_names")
         d = self.listener.get_message_with_topic("CHANNELNAMES")
         # print(f"d={d}")
-        channel_names = []  
+        channel_names = []
         for name in d:
             channel_names.append(name)
         return channel_names
@@ -313,7 +322,6 @@ class DastardClient():
         }
         # print(f"config={config}")
         self._call("SourceControl.ConfigureTriggers", config)
-
 
     def start_lancero(self):
         """
@@ -403,6 +411,7 @@ def getProjectorConfigs(filename, nameNumberToIndex):
             }
         out[nameNumber] = config
     return out
+
 
 def toMatBase64(array):
     """
