@@ -119,7 +119,7 @@ class AutoTES(QMainWindow):
 
     def startPrograms(self, button):
         print("Start programs")
-        subprocess.Popen(['/home/xf07id1/autotes/test_open_programs.sh'])
+        subprocess.Popen(['open_tes_programs.sh'])
         button.setStyleSheet("background-color : green")
         self.statusLabel.setText("TES Programs Started")
 
