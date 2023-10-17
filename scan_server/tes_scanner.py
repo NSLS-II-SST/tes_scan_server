@@ -286,6 +286,10 @@ class TESScanner():
                 return filepattern
         raise ValueError("Could not find a suitable directory name")
 
+    def start_lancero(self):
+        success = self._dastard.start_lancero()
+        return success
+    
     # Dastard operations
     def file_start(self, path=None, write_ljh=None, write_off=None,
                    setFilenamePattern=False):
@@ -459,7 +463,7 @@ class TESScanner():
         """take a timestamp for future reference"""
         self.roi_counts_start_unixnano = time_unixnano()
 
-    def roi_get_counts(self):
+    def roi_get_counts(self, fast=True):
         """return a dictionary of counts in each ROI for the last scan epoch time.
         Should call after scan_point_end"""
         # Need to put in TFY-XAS
@@ -471,8 +475,17 @@ class TESScanner():
         if self.calibration_state == "no_calibration":
             # check reasonable range for filtValue, or better yet,
             # stop trying to histogram
-            bin_centers, counts = self._get_data().histWithUnixnanos([100, 60000], "filtValue", [start_unixnano], [end_unixnano])
-            roi_counts['tfy'] = int(counts[0])
+            #
+            if fast:
+                duration = self._scan.epoch_time_end_s[last_epoch_idx] - self._scan.epoch_time_start_s[last_epoch_idx]
+                counts = int(np.sum(self._dastard.listener.get_message_with_topic('TRIGGERRATE')['CountsSeen'])*duration)
+                #except:
+                #    counts = 0
+                roi_counts['tfy'] = counts
+            else:
+                bin_centers, counts = self._get_data().histWithUnixnanos([100, 60000], "filtValue", [start_unixnano], [end_unixnano])
+                roi_counts['tfy'] = int(counts[0])
+
         else:
             for name, (lo_ev, hi_ev) in self._roi.items():
                 # we should calculate energy once, then bin it up into all the ROIS

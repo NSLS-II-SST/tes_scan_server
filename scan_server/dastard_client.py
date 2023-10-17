@@ -112,6 +112,17 @@ class DastardClient():
             print(f"Dastard Client: calling {method_name}")
         self._socket.sendall(json.dumps(msg).encode())
         response = self._socket.recv(4096)
+
+        if response == b"":
+            print("Got b'', try reconnecting to Dastard")
+            self._socket.close()
+            self._connect()
+            self._socket.sendall(json.dumps(msg).encode())
+            response = self._socket.recv(4096)
+
+        if response == b"":
+            raise DastardError("no communication from Dastard")
+        
         response = json.loads(response.decode())
         if verbose:     
             print(f"Dastard Client: response: {response}")
@@ -304,6 +315,49 @@ class DastardClient():
         self._call("SourceControl.ConfigureTriggers", config)
 
 
+    def start_lancero(self):
+        """
+        Ported over from dc.py
+        """
+        mask = 0
+        for k in range(16):
+            mask |= (1 << k)
+        print("Fiber mask: 0x%4.4x" % mask)
+        clock = 125
+        nsamp = 4
+
+        activate = [0]
+        delays = [1]
+        """
+        for k, v in list(self.lanceroCheckBoxes.items()):
+            if v.isChecked():
+                activate.append(k)
+                delays.append(self.lanceroDelays[k].value())
+        """
+        chansep_columns = 0
+        chansep_cards = 0
+        firstrow = 1
+
+        config = {
+            "FiberMask": mask,
+            "ClockMHz": clock,
+            "CardDelay": delays,
+            "Nsamp": nsamp,
+            "FirstRow": firstrow,
+            "ChanSepCards": chansep_cards,
+            "ChanSepColumns": chansep_columns,
+            "ActiveCards": activate,
+            "AvailableCards": [],   # This is filled in only by server, not us.
+        }
+        print("START LANCERO CONFIG")
+        print(config)
+        okay = self._call("SourceControl.ConfigureLanceroSource", config)
+        if not okay:
+            return False
+        okay = self._call("SourceControl.Start", "LANCEROSOURCE")
+        if not okay:
+            return False
+        return True
 
 
 def getProjectorConfigs(filename, nameNumberToIndex):
