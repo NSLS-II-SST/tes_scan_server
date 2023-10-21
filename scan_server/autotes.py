@@ -1,42 +1,12 @@
-import PyQt5
-from PyQt5.QtWidgets import QMainWindow, QWidget, QPushButton, QApplication, QVBoxLayout, QLabel, QMessageBox
-from PyQt5.QtCore import QObject, pyqtSignal, QThread
+
+from qtpy.QtWidgets import QMainWindow, QWidget, QPushButton, QApplication, QVBoxLayout, QLabel, QMessageBox
+from qtpy.QtCore import QObject, Signal, QThread, Slot
 import subprocess
 import socket
 import json
-try:
-    from cringe.cringe_control import CringeControl
-except:
-    class CringeControl:
-        def __init__(self):
-            print("No Cringe, Running Simulation Mode for GUI Testing")
-
-        def setup_crate(self):
-            print("CRINGE SIM MODE, SETUP NOT RUN")
-            return "ok"
-
-        def full_tune(self):
-            print("CRINGE SIM MODE, TUNE NOT RUN")
-            return "ok"
-
-class CringeWorkerBase(QObject):
-    finished = pyqtSignal(str)
-
-    def __init__(self):
-        super().__init__()
-        self.cc = CringeControl()
-
-
-class CringePowerOn(CringeWorkerBase):
-    def run(self):
-        resp = self.cc.setup_crate()
-        self.finished.emit(resp)
-
-
-class CringeAutotune(CringeWorkerBase):
-    def run(self):
-        resp = self.cc.full_tune()
-        self.finished.emit(resp)
+from .cringe_model import CringePowerOn, CringeAutotune
+from .nsls_server import create_tes
+from .rpc_server import RPCServer, get_dispatch_from
 
 
 class ScannerComm:
@@ -68,9 +38,10 @@ class ScannerComm:
 
 
 class AutoTES(QMainWindow):
-    def __init__(self):
+    def __init__(self, tes):
         super().__init__()
-
+        self.tes = tes
+        self.rpc = RPCServer("localhost", 4000, get_dispatch_from(tes))
         self.statusLabel = QLabel("Unknown")
         self.progButton = QPushButton("Start TES Programs")
         self.powerButton = QPushButton("Power TES On")
@@ -83,7 +54,7 @@ class AutoTES(QMainWindow):
         self.tuneButton.clicked.connect(lambda: self.startAutotune(self.tuneButton))
 
         #self.power_supplies = tower_power_supplies.TowerPowerSupplies()
-        self.scanner = ScannerComm("localhost", 4000)
+        #self.scanner = ScannerComm("localhost", 4000)
         self.powerWorker = CringePowerOn()
         self.thread1 = QThread()
         self.powerWorker.moveToThread(self.thread1)
@@ -96,6 +67,11 @@ class AutoTES(QMainWindow):
         self.tuneWorker.finished.connect(self.autotuneFinished)
         self.thread2.started.connect(self.tuneWorker.run)
 
+        self.thread3 = QThread()
+        self.rpc.moveToThread(self.thread3)
+        self.thread3.started.connect(self.rpc.start)
+        self.thread3.start()
+
         self.layout = QVBoxLayout()
         self.layout.addWidget(self.statusLabel)
         self.layout.addWidget(self.progButton)
@@ -107,6 +83,10 @@ class AutoTES(QMainWindow):
         self.main.setLayout(self.layout)
         self.setCentralWidget(self.main)
 
+    @Slot(object, str)
+    def printMsg(self, socket, msg):
+        print(msg)
+
     def disableButtons(self):
         buttons = [self.progButton, self.powerButton, self.dataButton, self.tuneButton]
         for button in buttons:
@@ -117,11 +97,33 @@ class AutoTES(QMainWindow):
         for button in buttons:
             button.setEnabled(True)
 
+    def checkPrograms(self):
+        programs = ["cringe", "dastard", "nsls_server", "dcom"]
+        proc_returns = [subprocess.run(["pgrep", prog], stdout=subprocess.PIPE)
+                        for prog in programs]
+        for r, prog in zip(proc_returns, programs):
+            if r.returncode != 1:
+                return False
+        return True
+
     def startPrograms(self, button):
         print("Start programs")
         subprocess.Popen(['open_tes_programs.sh'])
-        button.setStyleSheet("background-color : green")
-        self.statusLabel.setText("TES Programs Started")
+        button.setStyleSheet("background-color : grey")
+        self.statusLabel.setText("TES Programs Starting")
+
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("TES Programs Starting")
+        dlg.setText("Please wait until the CRINGE program starts. In this window, press 'Yes' if this was successful, and 'No' if it was not")
+        dlg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        resp = dlg.exec()
+
+        if resp == QMessageBox.Yes:
+            button.setStyleSheet("background-color : green")
+            self.statusLabel.setText("TES Programs Started")
+        else:
+            button.setStyleSheet("background-color : red")
+            self.statusLabel.setText("TES Programs ")
 
     def tesPowerStart(self, button):
         print("Power on TES")
@@ -140,7 +142,7 @@ class AutoTES(QMainWindow):
 
     def startData(self, button):
         print("Start tes Data")
-        response = self.scanner.sendrcv("start_lancero")
+        response = self.tes.start_lancero()
         print(response)
         button.setStyleSheet("background-color : green")
         self.statusLabel.setText("TES Data started streaming")
@@ -176,11 +178,14 @@ class AutoTES(QMainWindow):
             self.statusLabel.setText("Autotune failed, check Cringe window")
         self.enableButtons()
 
+
 def main():
     import sys
 
     app = QApplication([])
-    mainWindow = AutoTES()
+    tes = create_tes()
+
+    mainWindow = AutoTES(tes)
     mainWindow.show()
     sys.exit(app.exec())
 

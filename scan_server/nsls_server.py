@@ -1,23 +1,18 @@
-from scan_server import (TESScanner, DastardClient, DastardListener,
-                         rpc_server, NSLSExtra, CringeDastardSettings)
+from .dastard_client import DastardClient, DastardListener
+from .tes_model import TESModel, CringeDastardSettings
 import os
 from pathlib import Path
+import rpc_server
+from rpc_server import RPCDispatch, get_dispatch_from
 
 
-# needed for exception filtering
-import scan_server
-import statemachine
-
-
-def start():
+def create_tes():
     beamtime_id = 1
     base_user_output_dir = os.path.expanduser("~/userout")
     server_log_dir = os.path.expanduser("~/.scan_server")
     Path(server_log_dir).mkdir(parents=True, exist_ok=True)
     dastard_host = "localhost"
     dastard_port = 5500
-    address = ""
-    port = 4000
     time_human = rpc_server.time_human()
     cdsettings = CringeDastardSettings(
         record_nsamples=2000,
@@ -28,20 +23,19 @@ def start():
         write_off=True
     )
 
-    no_traceback_error_types = [scan_server.dastard_client.DastardError,
-                                statemachine.exceptions.TransitionNotAllowed]
-
     dastard_listener = DastardListener(dastard_host, dastard_port)
     dastard = DastardClient((dastard_host, dastard_port),
                             listener=dastard_listener)  # ,
     # pulse_trigger_params = None, noise_trigger_params = None)
     bg_log_file = open(os.path.join(server_log_dir, f"{time_human}_bg.log"), 'a')
-    scanner = TESScanner(dastard, beamtime_id, base_user_output_dir,
-                         bg_log_file, cdsettings=cdsettings)
-    server_log_filename = os.path.join(server_log_dir, f"{time_human}.log")
-    dispatch = rpc_server.get_dispatch_from(scanner)
-    dispatch.update(rpc_server.get_dispatch_from(NSLSExtra()))
-    print("Starting NSLS-II Scan Server")
-    with open(server_log_filename, "w") as f:
-        rpc_server.start(address, port, dispatch, verbose=True, log_file=f,
-                         no_traceback_error_types=no_traceback_error_types)
+    tes = TESModel(dastard, beamtime_id, base_user_output_dir,
+                   bg_log_file, cdsettings)
+    return tes
+
+
+if __name__ == "__main__":
+    rpc_host = "localhost"
+    rpc_port = 4000
+    tes = create_tes()
+    rpc = RPCDispatch(rpc_host, rpc_port, get_dispatch_from(tes))
+    rpc.start()

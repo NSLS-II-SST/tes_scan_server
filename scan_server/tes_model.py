@@ -1,15 +1,19 @@
-from statemachine import StateMachine, State
-from typing import List
-import time
-import datetime
-from dataclasses import dataclass
-from dataclasses_json import dataclass_json
 from scan_json import DataScan, CalibrationScan
+from qtpy.QtCore import QObject, Signal, Slot
+import datetime
+from statemachine import StateMachine, State
+from statemachine.exceptions import TransitionNotAllowed
+import subprocess
 import os
 from os.path import join, exists, basename, dirname
 from pathlib import Path
-import subprocess
+from dataclasses import dataclass
+from dataclasses_json import dataclass_json
+import time
 from glob import glob
+from dastard_client import DastardError
+from rpc_server import get_dispatch_from, handle_one_message
+from cringe_model import CringeControl
 
 
 @dataclass_json
@@ -21,9 +25,7 @@ class CringeDastardSettings:
     trigger_n_monotonic: int
     write_off: bool
     write_ljh: bool
-
-
-
+    projector_filename: str
 
 
 class ScannerState(StateMachine):
@@ -32,7 +34,7 @@ class ScannerState(StateMachine):
     file_open = State("file_open")
     scan = State('scan')
     scan_point = State("scan_point")
-    #cal_data = State('cal_data')
+    # cal_data = State('cal_data')
 
     scan_start = file_open.to(scan)
     scan_end = scan.to(file_open)
@@ -43,38 +45,29 @@ class ScannerState(StateMachine):
     file_start = no_file.to(file_open)
     file_end = file_open.to(no_file)
 
-    #cal_data_start = file_open.to(cal_data)
-    #cal_data_end = cal_data.to(file_open)
 
-
-class TESScanner():
-    """talks to dastard and mass"""
+class TESModel(QObject):
     def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str,
                  background_process_log_file, cdsettings):
         self._dastard = dastard
-        self._beamtime_id = beamtime_id
+        self._cc = CringeControl()
         self._cdsettings = cdsettings
         self._base_user_output_dir = base_user_output_dir
-        self._state: ScannerState = ScannerState()
-        self._tfy_ulim = 1600
-        self._tfy_llim = 200
-        self._reset()
         self._background_process_log_file = background_process_log_file
+        self._state: ScannerState = ScannerState()
+        self._dispatch = get_dispatch_from(self)
+        self._reset()
 
     def _reset(self):
         self._last_scan = None
         self._log_date = datetime.datetime.today().strftime("%Y%m%2d")
         self._scan = None
-        self._data = None
         self._cal_number: int = -1
         self._scan_num = None
         self._scan_str = ""
         self._overwrite = False
-        self._calibration_to_routine: List[str] = []
-        self.calibration_state = "no_calibration"
         self._off_filename = None
 
-    # Properties
     @property
     def state(self):
         return self._state.current_state_value
@@ -110,9 +103,19 @@ class TESScanner():
         self._scan_num = self.scan_num + 1
         return self._scan_num
 
+    @Slot(object, str)
+    def _handle_message(self, socket, data):
+        print(data)
+        no_traceback_error_types = [TransitionNotAllowed, DastardError]
+        handle_one_message(socket, data, self._dispatch, True, no_traceback_error_types)
+
     def getFilenamePattern(self, path):
         """
-        path : /nsls2/data/sst/legacy/ucal/raw/%Y/%m/%2d
+        Bad name: really takes a path pattern (filled with strftime) where raw data is stored,
+        and generates a filename pattern for the OFF files AND creates all required directories
+        on the path to that filename
+        path : /nsls2/data/sst/legacy/ucal/raw/%Y/%m/%2d (I think this is now /data -- not writing
+        directly to Lustre anymore due to weird problems)
         """
         today = datetime.datetime.today()
         datedir = today.strftime(path)
@@ -129,6 +132,24 @@ class TESScanner():
         success = self._dastard.start_lancero()
         return success
 
+    def start_programs(self):
+        subprocess.Popen(['open_tes_programs.sh'])
+        return self.check_programs()
+
+    def check_programs(self):
+        programs = ["cringe", "dastard", "dcom"]
+        proc_returns = [subprocess.run(["pgrep", prog], stdout=subprocess.PIPE)
+                        for prog in programs]
+        for r, prog in zip(proc_returns, programs):
+            if r.returncode != 1:
+                return False
+        return True
+
+    def power_on_tes(self):
+        return self._cc.setup_crate()
+
+    def autotune(self):
+        return self._cc.full_tune()
 
     def file_start(self, path=None, write_ljh=None, write_off=None,
                    setFilenamePattern=False):
@@ -148,10 +169,6 @@ class TESScanner():
         self._off_filename = self._dastard.start_file(write_ljh, write_off, path, filenamePattern)
         self._log_date = os.path.basename(self._off_filename)[:8]
         return self._off_filename
-        # dastard lazily creates off files when it has data to write
-        # so we need to wait to open the off files until some time has
-        # passed from calling file_start
-        # so we must always access through _get_data (_hides it from the rpc)
 
     def file_end(self, _try_rsync_data=False, **rsync_kwargs):
         self._state.file_end()
@@ -161,11 +178,15 @@ class TESScanner():
         self._reset()
 
     def make_projectors(self, noise_file, pulse_file):
-        args = ["make_projectors", "-rio", "/home/xf07id1/.scan_server/nsls_projectors.hdf5", pulse_file, noise_file]
+        args = ["make_projectors", "-rio", self._cdsettings.projector_filename,
+                pulse_file, noise_file]
         print(args)
-        subprocess.run(args, stdout=self._background_process_log_file, stderr=subprocess.STDOUT)
+        subprocess.run(args, stdout=self._background_process_log_file,
+                       stderr=subprocess.STDOUT)
 
-    def set_projectors(self, projector_filename="/home/xf07id1/.scan_server/nsls_projectors.hdf5"):
+    def set_projectors(self, projector_filename=None):
+        if projector_filename is None:
+            projector_filename = self._cdsettings.projector_filename
         self._dastard.set_projectors(projector_filename)
 
     def set_pulse_triggers(self):
@@ -187,18 +208,37 @@ class TESScanner():
     def scan_start(self, var_name: str, var_unit: str, sample_id: int,
                    sample_desc: str, extra: dict = {}):
         self._state.scan_start()
-        scan_num = self.scan_num
-        for fname in self._log_filenames("scan", scan_num):
+        for fname in self._log_filenames("scan", self.scan_num):
             if not self._overwrite:
                 assert not os.path.isfile(fname)
         data_path = self._dastard.get_data_path()
-        user_output_dir = self._scan_user_output_dir(scan_num)
-        self._scan = DataScan(var_name, var_unit, scan_num, self._beamtime_id,
+        self._scan = DataScan(var_name, var_unit, self.scan_num, self._beamtime_id,
                               sample_id, sample_desc, extra, data_path,
-                              cal_number=self._cal_number,
-                              user_output_dir=user_output_dir)
-        self._scan_str = f"SCAN{scan_num}"
+                              cal_number=self._cal_number)
+        self._scan_str = f"SCAN{self.scan_num}"
         self._dastard.set_experiment_state(self.scan_str)
+
+    def calibration_start(self, var_name: str, var_unit: str, sample_id: int,
+                          sample_desc: str, routine: str, extra: dict = {}):
+        """
+        start taking calibration data, ensure the appropriate x-rays are
+        incident on the detector
+        sample_id: int - for your reference
+        sample_desc: str - for your reference
+        routine: str - which function is used to generate calibration
+        curves from the data
+        """
+        self._state.scan_start()
+        # self.set_pulse_triggers()
+
+        self._calibration_to_routine.append(routine)
+        data_path = self._dastard.get_data_path()
+        self._scan = CalibrationScan(var_name, var_unit, self.scan_num,
+                                     self._beamtime_id, sample_id,
+                                     sample_desc, extra, data_path)
+        self._scan_str = f"CAL{self.scan_num}"
+        self._dastard.set_experiment_state(self.scan_str)
+        self._cal_number = self.scan_num
 
     def scan_point_start(self, scan_var: float, _epoch_time_s_for_test=None,
                          extra: dict = None):
@@ -228,37 +268,9 @@ class TESScanner():
         self._dastard.set_experiment_state("PAUSE")
         if _try_post_processing:
             pass
-            #self.start_post_processing()
+            # self.start_post_processing()
         if _try_rsync_data:
             self.rsync_data(**rsync_kwargs)
-
-    # Calibration Functions
-    def calibration_start(self, var_name: str, var_unit: str, sample_id: int,
-                          sample_desc: str, routine: str, extra: dict = {}):
-        """
-        start taking calibraion data, ensure the appropriate x-rays are
-        incident on the detector
-        sample_id: int - for your reference
-        sample_desc: str - for your reference
-        routine: str - which function is used to generate calibration
-        curves from the data
-        """
-        self._state.scan_start()
-        # self.set_pulse_triggers()
-
-        self._calibration_to_routine.append(routine)
-        data_path = self._dastard.get_data_path()
-        scan_num = self.scan_num
-        user_output_dir = self._scan_user_output_dir(scan_num)
-        self._scan = CalibrationScan(var_name, var_unit, scan_num,
-                                     self._beamtime_id, sample_id,
-                                     sample_desc, extra, data_path,
-                                     user_output_dir=user_output_dir)
-        self._scan_str = f"CAL{scan_num}"
-        self._dastard.set_experiment_state(self.scan_str)
-        self._cal_number = scan_num
-
-    # Analysis Functions
 
     def rsync_data(self, dest="/nsls2/data/sst/legacy/ucal/raw/%Y/%m/%2d", filename=None):
         if filename is None:
@@ -270,6 +282,8 @@ class TESScanner():
         print(args)
         subprocess.Popen(args)
 
+    # Below section is entirely concerned with creating/finding log filenames
+    # Somehow, this should be locked away in a deep dark dungeon
     def _beamtime_user_output_dir(self, subdir=None, make=True):
         dirname = os.path.join(self._base_user_output_dir, f"beamtime_{self._beamtime_id}")
         if subdir is not None:
@@ -277,6 +291,9 @@ class TESScanner():
         if make:
             Path(dirname).mkdir(parents=True, exist_ok=True)
         return dirname
+
+    def _user_log_dir(self, make=True):
+        return self._beamtime_user_output_dir(self._log_date, make=make)
 
     def _get_current_scan_num_from_logs(self):
         log_dir = self._user_log_dir(make=False)
@@ -299,9 +316,6 @@ class TESScanner():
         return scan_num
         #return 0
 
-    def _user_log_dir(self, make=True):
-        return self._beamtime_user_output_dir(self._log_date, make=make)
-
     def _tes_log_dir(self, make=True):
         dirname = os.path.join(os.path.dirname(self._off_filename), "logs")
         if make:
@@ -321,17 +335,3 @@ class TESScanner():
             assert not os.path.isfile(filename1), f"{filename1} already exists"
             assert not os.path.isfile(filename2), f"{filename2} already exists"
         return [filename1, filename2]
-
-    def _scan_user_output_dir(self, scan_num, subdir=None, make=False):
-        dirname = self._beamtime_user_output_dir(os.path.join(self._log_date,
-                                                              f"scan{scan_num:04d}"),
-                                                 make=make)
-        if subdir is not None:
-            dirname = os.path.join(dirname, subdir)
-        if make:
-            Path(dirname).mkdir(parents=True, exist_ok=True)
-        return dirname
-
-
-def time_unixnano():
-    return int(1e9*time.time())

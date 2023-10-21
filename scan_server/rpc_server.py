@@ -9,7 +9,7 @@ from inspect import signature
 import collections
 import textwrap
 import shutil
-
+from qtpy.QtCore import QObject, Signal
 
 def time_human(t=None):
     if t is None:
@@ -76,7 +76,7 @@ def handle_one_message(sock, data, dispatch, verbose, no_traceback_error_types):
     t_struct = time.localtime(t_s)
     t_human = time_human(t_struct)
     if verbose:
-        print(f"{t_human}")
+        print(f"{t_human}, {t_s}")
         print(f"got: {data}")
     _id, method_name, args, kwargs, result, error = call_method_from_data(data, dispatch, no_traceback_error_types)
     # if verbose:
@@ -133,49 +133,112 @@ def get_dispatch_from(x):
 #     return log
 
 
-def start(address, port, dispatch, verbose, log_file, no_traceback_error_types):
-    terminal_size = shutil.get_terminal_size((80, 20))
-    print(f"TES Scan Server @ {address}:{port}")
-    print("Ctrl-C to exit")
-    print(f"Log File: {log_file.name}")
-    print("methods:")
-    for k, m in dispatch.items():
-        wrapped = textwrap.wrap(f"{k}{signature(m)}", width=terminal_size.columns,
-                                initial_indent="* ", subsequent_indent="\t")
-        for line in wrapped:
-            print(line)
-    serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # bind the socket to a public host, and a well-known port
-    serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    serversocket.bind((address, port))
-    # become a server socket
-    serversocket.listen(1)
-    if log_file is not None:
-        log_file.write(f"{dispatch}\n")
-    try:
-        while True:
-            # accept connections from outside
-            (clientsocket, address) = serversocket.accept()
-            print(f"connection from {address}")
+class RPCServer(QObject):
+    gotMessage = Signal(object, str)
+
+    def __init__(self, address, port, log_file=None):
+        super().__init__()
+        self.address = address
+        self.port = port
+        self.log_file = log_file
+
+    def start(self):
+        """
+        terminal_size = shutil.get_terminal_size((80, 20))
+        print(f"TES Scan Server @ {address}:{port}")
+        print("Ctrl-C to exit")
+        print(f"Log File: {log_file.name}")
+        print("methods:")
+        for k, m in dispatch.items():
+            wrapped = textwrap.wrap(f"{k}{signature(m)}", width=terminal_size.columns,
+                                    initial_indent="* ", subsequent_indent="\t")
+            for line in wrapped:
+                print(line)
+        """
+        serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # bind the socket to a public host, and a well-known port
+        serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        serversocket.bind((self.address, self.port))
+        # become a server socket
+        serversocket.listen(1)
+        # if log_file is not None:
+        #     log_file.write(f"{dispatch}\n")
+        try:
             while True:
-                data = get_message(clientsocket)
-                if data is None:
-                    print(f"data was none, breaking to wait for connection")
-                    break
-                try:
-                    a = handle_one_message(clientsocket, data, dispatch,
-                                           verbose, no_traceback_error_types)
+                # accept connections from outside
+                (clientsocket, address) = serversocket.accept()
+                print(f"connection from {address}")
+                while True:
+                    data = get_message(clientsocket)
+                    if data is None:
+                        print(f"data was none, breaking to wait for connection")
+                        break
+                    self.gotMessage.emit(clientsocket, data.decode())
+                    """
                     if log_file is not None:
-                        t_human, data, response = a
-                        log_file.write(f"{t_human}")
-                        log_file.write(f"{data}\n")
-                        log_file.write(f"{response}\n")
-                except Exception as ex:
-                    s = f"failed handle_one_message with data = {data} and exception = {ex}"
-                    print(s)
-                    log_file.write(s)
-    except KeyboardInterrupt:
-        print("\nCtrl-C detected, shutting down")
-        if log_file is not None:
-            log_file.write(f"Ctrl-C at {time_human()}\n")
-        return
+                    t_human, data, response = a
+                    log_file.write(f"{t_human}")
+                    log_file.write(f"{data}\n")
+                    log_file.write(f"{response}\n")
+                    """
+        except KeyboardInterrupt:
+            print("\nCtrl-C detected, shutting down")
+            if self.log_file is not None:
+                self.log_file.write(f"Ctrl-C at {time_human()}\n")
+            return
+
+
+class RPCDispatch(QObject):
+    gotMessage = Signal(object, str)
+
+    def __init__(self, address, port, dispatch, log_file=None):
+        super().__init__()
+        self.address = address
+        self.port = port
+        self.dispatch = dispatch
+        self.log_file = log_file
+
+    def start(self):
+        """
+        terminal_size = shutil.get_terminal_size((80, 20))
+        print(f"TES Scan Server @ {address}:{port}")
+        print("Ctrl-C to exit")
+        print(f"Log File: {log_file.name}")
+        print("methods:")
+        for k, m in dispatch.items():
+            wrapped = textwrap.wrap(f"{k}{signature(m)}", width=terminal_size.columns,
+                                    initial_indent="* ", subsequent_indent="\t")
+            for line in wrapped:
+                print(line)
+        """
+        serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # bind the socket to a public host, and a well-known port
+        serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        serversocket.bind((self.address, self.port))
+        # become a server socket
+        serversocket.listen(1)
+        # if log_file is not None:
+        #     log_file.write(f"{dispatch}\n")
+        try:
+            while True:
+                # accept connections from outside
+                (clientsocket, address) = serversocket.accept()
+                print(f"connection from {address}")
+                while True:
+                    data = get_message(clientsocket)
+                    if data is None:
+                        print(f"data was none, breaking to wait for connection")
+                        break
+                    handle_one_message(clientsocket, data, self.dispatch, True, [])
+                    """
+                    if log_file is not None:
+                    t_human, data, response = a
+                    log_file.write(f"{t_human}")
+                    log_file.write(f"{data}\n")
+                    log_file.write(f"{response}\n")
+                    """
+        except KeyboardInterrupt:
+            print("\nCtrl-C detected, shutting down")
+            if self.log_file is not None:
+                self.log_file.write(f"Ctrl-C at {time_human()}\n")
+            return
