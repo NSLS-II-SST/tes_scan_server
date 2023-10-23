@@ -134,9 +134,10 @@ class TESModel(QObject):
 
     def start_programs(self):
         subprocess.Popen(['open_tes_programs.sh'])
-        return self.check_programs()
+        time.sleep(5)
+        return self.check_programs_running()
 
-    def check_programs(self):
+    def check_programs_running(self):
         programs = ["cringe", "dastard", "dcom"]
         proc_returns = [subprocess.run(["pgrep", prog], stdout=subprocess.PIPE)
                         for prog in programs]
