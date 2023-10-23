@@ -1,4 +1,4 @@
-from qtpy.QtCore import QObject, Signal
+from PyQt5.QtCore import QObject, pyqtSignal
 try:
     from cringe.cringe_control import CringeControl
 except ImportError:
@@ -16,7 +16,7 @@ except ImportError:
 
 
 class CringeWorkerBase(QObject):
-    finished = Signal(str)
+    finished = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()

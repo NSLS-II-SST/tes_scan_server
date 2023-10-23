@@ -22,7 +22,7 @@ setup(
     version='0.1.0',
     zip_safe=False,
     # package_data={'': ['*.png']},
-    scripts=['bin/open_tes_programs.sh'],
+    scripts=['bin/open_tes_programs.sh', 'bin/close_tes_programs.sh'],
     entry_points={
         'console_scripts': [
             'ssrl_10_1_server = scan_server.ssrl_server:start',

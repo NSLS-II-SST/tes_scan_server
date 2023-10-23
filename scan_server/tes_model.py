@@ -1,5 +1,5 @@
-from scan_json import DataScan, CalibrationScan
-from qtpy.QtCore import QObject, Signal, Slot
+from .scan_json import DataScan, CalibrationScan
+from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 import datetime
 from statemachine import StateMachine, State
 from statemachine.exceptions import TransitionNotAllowed
@@ -11,9 +11,9 @@ from dataclasses import dataclass
 from dataclasses_json import dataclass_json
 import time
 from glob import glob
-from dastard_client import DastardError
-from rpc_server import get_dispatch_from, handle_one_message
-from cringe_model import CringeControl
+from .dastard_client import DastardError
+from .rpc_server import get_dispatch_from, handle_one_message
+from .cringe_model import CringeControl
 
 
 @dataclass_json
@@ -49,13 +49,14 @@ class ScannerState(StateMachine):
 class TESModel(QObject):
     def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str,
                  background_process_log_file, cdsettings):
+        super().__init__()
         self._dastard = dastard
         self._cc = CringeControl()
         self._cdsettings = cdsettings
         self._base_user_output_dir = base_user_output_dir
+        self._beamtime_id = beamtime_id
         self._background_process_log_file = background_process_log_file
         self._state: ScannerState = ScannerState()
-        self._dispatch = get_dispatch_from(self)
         self._reset()
 
     def _reset(self):
@@ -103,7 +104,7 @@ class TESModel(QObject):
         self._scan_num = self.scan_num + 1
         return self._scan_num
 
-    @Slot(object, str)
+    @pyqtSlot(object, str)
     def _handle_message(self, socket, data):
         print(data)
         no_traceback_error_types = [TransitionNotAllowed, DastardError]
@@ -137,12 +138,15 @@ class TESModel(QObject):
         time.sleep(5)
         return self.check_programs_running()
 
+    def kill_programs(self):
+        subprocess.Popen(['close_tes_programs.sh'])
+        
     def check_programs_running(self):
         programs = ["cringe", "dastard", "dcom"]
         proc_returns = [subprocess.run(["pgrep", prog], stdout=subprocess.PIPE)
                         for prog in programs]
         for r, prog in zip(proc_returns, programs):
-            if r.returncode != 1:
+            if r.returncode == 1:
                 return False
         return True
 

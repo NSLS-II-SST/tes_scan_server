@@ -9,7 +9,7 @@ from inspect import signature
 import collections
 import textwrap
 import shutil
-from qtpy.QtCore import QObject, Signal
+from PyQt5.QtCore import QObject, pyqtSignal
 
 def time_human(t=None):
     if t is None:
@@ -134,7 +134,7 @@ def get_dispatch_from(x):
 
 
 class RPCServer(QObject):
-    gotMessage = Signal(object, str)
+    gotMessage = pyqtSignal(object, str)
 
     def __init__(self, address, port, log_file=None):
         super().__init__()
@@ -189,7 +189,7 @@ class RPCServer(QObject):
 
 
 class RPCDispatch(QObject):
-    gotMessage = Signal(object, str)
+    gotMessage = pyqtSignal(object, str)
 
     def __init__(self, address, port, dispatch, log_file=None):
         super().__init__()

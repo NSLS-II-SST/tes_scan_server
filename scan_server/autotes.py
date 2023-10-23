@@ -1,6 +1,6 @@
 
-from qtpy.QtWidgets import QMainWindow, QWidget, QPushButton, QApplication, QVBoxLayout, QLabel, QMessageBox
-from qtpy.QtCore import QObject, Signal, QThread, Slot
+from PyQt5.QtWidgets import QMainWindow, QWidget, QPushButton, QApplication, QVBoxLayout, QLabel, QMessageBox
+from PyQt5.QtCore import QObject, pyqtSignal, QThread, pyqtSlot
 import subprocess
 import socket
 import json
@@ -83,7 +83,7 @@ class AutoTES(QMainWindow):
         self.main.setLayout(self.layout)
         self.setCentralWidget(self.main)
 
-    @Slot(object, str)
+    @pyqtSlot(object, str)
     def printMsg(self, socket, msg):
         print(msg)
 

@@ -24,9 +24,3 @@ else
     gnome-terminal --tab -t adrgui -- adr_gui2
 fi
 
-if pgrep nsls_server &> /dev/null; then
-    echo "Found tes server"
-else
-    gnome-terminal --tab -t nsls_server -- nsls_server
-fi
-
