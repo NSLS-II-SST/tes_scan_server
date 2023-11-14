@@ -23,6 +23,10 @@ class DastardListener():
         self.messages_seen = collections.Counter()
         self.cache = {}
 
+    def reset(self):
+        self.messages_seen = collections.Counter()
+        self.cache = {}
+        
     def get_message(self):
         # Check socket for events, with 100 ms timeout
         if self.socket.poll(100) == 0:
@@ -87,16 +91,21 @@ class DastardClient():
         self.addr_port = addr_port
         self.listener = listener
         self._id_iter = itertools.count()
+        self.connected = False
         self._connect()
-        self._request_status()  # request one set of all messages on startup
+        if self.connected:
+            self._request_status()  # request one set of all messages on startup
 
     def _connect(self):
         try:
             self._socket = socket.create_connection(self.addr_port)
+            self.connected = True
         except socket.error as ex:
             host, port = self.addr_port
-            raise Exception(f"Could not connect to Dastard at {host}:{port}")
-
+            print(f"Could not connect to Dastard at {host}:{port}")
+            self.connected = False
+        return self.connected
+    
     def _message(self, method_name, params):
         if not isinstance(params, list):
             params = [params]
@@ -106,6 +115,11 @@ class DastardClient():
         return d
 
     def _call(self, method_name: str, params, verbose=True):
+        if not self.connected:
+            self._connect()
+        if not self.connected:
+            raise DastardError("Not able to connect to Dastard, check running and try again")
+        
         msg = self._message(method_name, params)
         if verbose:
             print(f"Dastard Client: sending: {msg}")
@@ -211,7 +225,7 @@ class DastardClient():
         return self.off_filename
 
     def set_projectors(self, projector_filename):
-        source_type = self.get_source_type()
+        source_type, _ = self.get_source_status()
         if source_type.lower() == "lancero":
             channels_per_pixel = 2
         else:
@@ -236,9 +250,11 @@ class DastardClient():
         print("set_projectors result")
         print(result)
 
-    def get_source_type(self):
+    def get_source_status(self):
         d = self.listener.get_message_with_topic("STATUS")
-        return d["SourceName"]
+        source = d.get('SourceName', 'None')
+        running = d.get('Running', False)
+        return (source, running)
 
     def get_n_channels(self):
         return len(self.get_name_to_number_index())

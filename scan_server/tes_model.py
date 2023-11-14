@@ -1,5 +1,5 @@
 from .scan_json import DataScan, CalibrationScan
-from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QThread
 import datetime
 from statemachine import StateMachine, State
 from statemachine.exceptions import TransitionNotAllowed
@@ -12,8 +12,8 @@ from dataclasses_json import dataclass_json
 import time
 from glob import glob
 from .dastard_client import DastardError
-from .rpc_server import get_dispatch_from, handle_one_message
 from .cringe_model import CringeControl
+from .adr_model import ADRListener
 
 
 @dataclass_json
@@ -27,7 +27,7 @@ class CringeDastardSettings:
     write_ljh: bool
     projector_filename: str
 
-
+    
 class ScannerState(StateMachine):
     """defines allowed state transitions, transitions will error if you do an invalid one"""
     no_file = State('no_file', initial=True)
@@ -45,20 +45,47 @@ class ScannerState(StateMachine):
     file_start = no_file.to(file_open)
     file_end = file_open.to(no_file)
 
+    def __init__(self, signal):
+        self.signal = signal
+        super().__init__()
+    
+    def on_enter_state(self, event, state):
+        self.signal.emit(state.id)
 
 class TESModel(QObject):
+    autotuned = pyqtSignal(str)
+    crate_powered_on = pyqtSignal(str)
+    crate_powered_off = pyqtSignal(str)
+    programs_started = pyqtSignal(bool)
+    programs_killed = pyqtSignal(bool)
+    lancero_on = pyqtSignal(bool)
+    lancero_off = pyqtSignal(bool)
+    state_changed = pyqtSignal(str)
+    
     def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str,
                  background_process_log_file, cdsettings):
         super().__init__()
+        self._command_list = ['state', 'filename', 'scan_str', 'scan_num', 'next_scan_num',
+                              'cal_number', 'getFilenamePattern', 'start_lancero', 'start_programs',
+                              'kill_programs', 'check_programs_running', 'power_on_tes', 'autotune',
+                              'file_start', 'file_end', 'make_projectors', 'set_projectors',
+                              'set_pulse_triggers', 'set_noise_triggers', 'scan_start',
+                              'scan_point_start', 'scan_point_end', 'calibration_start',
+                              'scan_end', 'rsync_data', 'setup_tes']
         self._dastard = dastard
         self._cc = CringeControl()
+        self._start_adr_listener()
         self._cdsettings = cdsettings
         self._base_user_output_dir = base_user_output_dir
         self._beamtime_id = beamtime_id
         self._background_process_log_file = background_process_log_file
-        self._state: ScannerState = ScannerState()
+        self._state: ScannerState = ScannerState(self.state_changed)
         self._reset()
 
+    def _start_adr_listener(self):
+        self._adrListener = ADRListener()
+        self._adrListener.start()
+        
     def _reset(self):
         self._last_scan = None
         self._log_date = datetime.datetime.today().strftime("%Y%m%2d")
@@ -104,12 +131,6 @@ class TESModel(QObject):
         self._scan_num = self.scan_num + 1
         return self._scan_num
 
-    @pyqtSlot(object, str)
-    def _handle_message(self, socket, data):
-        print(data)
-        no_traceback_error_types = [TransitionNotAllowed, DastardError]
-        handle_one_message(socket, data, self._dispatch, True, no_traceback_error_types)
-
     def getFilenamePattern(self, path):
         """
         Bad name: really takes a path pattern (filled with strftime) where raw data is stored,
@@ -128,18 +149,68 @@ class TESModel(QObject):
                 return filepattern
         raise ValueError("Could not find a suitable directory name")
 
+    def setup_tes(self):
+        print("starting programs")
+        success = self.start_programs()
+        if not success:
+            print("failure")
+            return success
+        print("success")
+        print("powering TES")
+        success = self.power_on_tes()
+        if not success:
+            print("failure")
+            return success
+        print("success")
+        success = self.start_lancero()
+        print("starting lancero")
+        if not success:
+            print("failure")
+            return success
+        print("success")
+        print("starting autotune")
+        success = self.autotune()
+        if success:
+            print("success")
+        else:
+            print("failure")
+        return success
+    
     # Dastard operations
-    def start_lancero(self):
-        success = self._dastard.start_lancero()
+    def start_lancero(self, restart=False):
+        source, running = self._dastard.get_source_status()
+        if source.lower() == 'lancero' and running:
+            print("lancero already running")
+            if restart:
+                self._dastard.stop_source()
+                success = self._dastard.start_lancero()
+            else:
+                success = True
+        else:
+            print(source, running)
+            success = self._dastard.start_lancero()
+        self.lancero_on.emit(success)
         return success
 
-    def start_programs(self):
+    def stop_lancero(self):
+        success = self._dastard.stop_source()
+        self.lancero_off.emit(success)
+        return success
+    
+    def start_programs(self, restart=False):
+        if restart:
+            print("killing programs first")
+            self.kill_programs()
+            time.sleep(2)
         subprocess.Popen(['open_tes_programs.sh'])
         time.sleep(5)
-        return self.check_programs_running()
+        success = self.check_programs_running()
+        self.programs_started.emit(success)
+        return success
 
     def kill_programs(self):
         subprocess.Popen(['close_tes_programs.sh'])
+        self._dastard.listener.reset()
         
     def check_programs_running(self):
         programs = ["cringe", "dastard", "dcom"]
@@ -151,10 +222,14 @@ class TESModel(QObject):
         return True
 
     def power_on_tes(self):
-        return self._cc.setup_crate()
+        result = self._cc.setup_crate()
+        self.crate_powered_on.emit(result)
+        return result
 
     def autotune(self):
-        return self._cc.full_tune()
+        result = self._cc.full_tune()
+        self.autotuned.emit(result)
+        return result
 
     def file_start(self, path=None, write_ljh=None, write_off=None,
                    setFilenamePattern=False):
