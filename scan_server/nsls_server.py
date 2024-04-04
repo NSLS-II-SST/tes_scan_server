@@ -34,7 +34,7 @@ def create_tes():
     return tes
 
 def start():
-    rpc_host = "localhost"
+    rpc_host = ""
     rpc_port = 4000
     tes = create_tes()
     rpc = RPCDispatch(rpc_host, rpc_port, get_dispatch_from(tes))

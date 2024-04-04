@@ -49,8 +49,8 @@ class ScannerState(StateMachine):
         self.signal = signal
         super().__init__()
     
-    def on_enter_state(self, event, state):
-        self.signal.emit(state.id)
+    def on_enter_state(self, state):
+        self.signal.emit(state.name)
 
 class TESModel(QObject):
     autotuned = pyqtSignal(str)
@@ -61,6 +61,7 @@ class TESModel(QObject):
     lancero_on = pyqtSignal(bool)
     lancero_off = pyqtSignal(bool)
     state_changed = pyqtSignal(str)
+    autosetup_changed = pyqtSignal(bool)
     
     def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str,
                  background_process_log_file, cdsettings):
@@ -71,7 +72,7 @@ class TESModel(QObject):
                               'file_start', 'file_end', 'make_projectors', 'set_projectors',
                               'set_pulse_triggers', 'set_noise_triggers', 'scan_start',
                               'scan_point_start', 'scan_point_end', 'calibration_start',
-                              'scan_end', 'rsync_data', 'setup_tes']
+                              'scan_end', 'rsync_data', 'setup_tes', 'autosetup', 'adr_event_handler']
         self._dastard = dastard
         self._cc = CringeControl()
         self._start_adr_listener()
@@ -80,10 +81,12 @@ class TESModel(QObject):
         self._beamtime_id = beamtime_id
         self._background_process_log_file = background_process_log_file
         self._state: ScannerState = ScannerState(self.state_changed)
+        self._autosetup = False
         self._reset()
 
     def _start_adr_listener(self):
         self._adrListener = ADRListener()
+        self._adrListener.event.connect(self.adr_event_handler)
         self._adrListener.start()
         
     def _reset(self):
@@ -131,6 +134,15 @@ class TESModel(QObject):
         self._scan_num = self.scan_num + 1
         return self._scan_num
 
+    @property
+    def autosetup(self):
+        return self._autosetup
+
+    @autosetup.setter
+    def autosetup(self, should_autosetup):
+        self.autosetup_changed.emit(should_autosetup)
+        self._autosetup = should_autosetup
+        
     def getFilenamePattern(self, path):
         """
         Bad name: really takes a path pattern (filled with strftime) where raw data is stored,
@@ -149,9 +161,22 @@ class TESModel(QObject):
                 return filepattern
         raise ValueError("Could not find a suitable directory name")
 
+    def adr_event_handler(self, event):
+        print(event)
+        if event == 'regulate_after_cycle':
+            if self.autosetup:
+                print("Autosetup TES after Cycle End")
+                self.setup_tes()
+            elif event == "start_mag_cycle":
+                print("Trying to stop file writing, if necessary")
+                try:
+                    self.file_end()
+                except (TransitionNotAllowed, DastardError):
+                    pass
+
     def setup_tes(self):
         print("starting programs")
-        success = self.start_programs()
+        success = self.start_programs(restart=True)
         if not success:
             print("failure")
             return success
@@ -162,7 +187,7 @@ class TESModel(QObject):
             print("failure")
             return success
         print("success")
-        success = self.start_lancero()
+        success = self.start_lancero(restart=True)
         print("starting lancero")
         if not success:
             print("failure")
@@ -227,7 +252,10 @@ class TESModel(QObject):
         return result
 
     def autotune(self):
+        self._cc.send_all_tower()
+        self._cc.shock_db1()
         result = self._cc.full_tune()
+        self.set_pulse_triggers()
         self.autotuned.emit(result)
         return result
 
@@ -299,7 +327,7 @@ class TESModel(QObject):
         self._dastard.set_experiment_state(self.scan_str)
 
     def calibration_start(self, var_name: str, var_unit: str, sample_id: int,
-                          sample_desc: str, routine: str, extra: dict = {}):
+                          sample_desc: str, extra: dict = {}):
         """
         start taking calibration data, ensure the appropriate x-rays are
         incident on the detector
@@ -311,7 +339,6 @@ class TESModel(QObject):
         self._state.scan_start()
         # self.set_pulse_triggers()
 
-        self._calibration_to_routine.append(routine)
         data_path = self._dastard.get_data_path()
         self._scan = CalibrationScan(var_name, var_unit, self.scan_num,
                                      self._beamtime_id, sample_id,

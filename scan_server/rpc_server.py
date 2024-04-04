@@ -109,6 +109,10 @@ class RPCDispatch(QObject):
                 # accept connections from outside
                 (clientsocket, address) = serversocket.accept()
                 print(f"connection from {address}")
+                if address[0] not in ['10.66.48.205', '127.0.0.1']:
+                    print("unapproved address")
+                    clientsocket.close()
+                    continue
                 while True:
                     data = get_message(clientsocket)
                     if data is None:
@@ -130,7 +134,7 @@ class RPCDispatch(QObject):
 
     def call_method(self, method_name, args=[], kwargs={}, no_traceback_error_types=[]):
         if method_name not in self.dispatch.keys():
-            return None, f"Method '{method_name}' does not exit, valid methods are {list(dispatch.keys())}"
+            return None, f"Method '{method_name}' does not exit, valid methods are {list(self.dispatch.keys())}"
         method = self.dispatch[method_name]
         if not isinstance(args, list):
             return None, f"args must be a list, instead it is {args}"
@@ -162,6 +166,8 @@ class RPCDispatch(QObject):
         method_name, args, kwargs, _id, error = get_method_from_data(data)
         if error is None:
             result, error = self.call_method(method_name, args, kwargs, no_traceback_error_types)
+        else:
+            result = None
         # if verbose:
         #     print(f"id: {_id}, method_name: {method_name}, args: {args}, result: {result}, error: {error}")
         response = make_simple_response(_id, method_name, args, kwargs, result, error).encode()
@@ -170,7 +176,7 @@ class RPCDispatch(QObject):
         try:
             n = sock.send(response)
             assert n == len(response), f"only {n} of {len(response)} bytes were sent"
-        except BrokenPipeError:
+        except (BrokenPipeError, ConnectionResetError):
             print("failed to send response")
             pass
         return t_human, data, response

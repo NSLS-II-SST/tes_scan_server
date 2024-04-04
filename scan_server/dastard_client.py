@@ -20,10 +20,12 @@ class DastardListener():
         self.address = "tcp://%s:%d" % (self.host, self.baseport)
         self.socket.connect(self.address)
         self.socket.setsockopt_string(zmq.SUBSCRIBE, u"")
-        self.messages_seen = collections.Counter()
-        self.cache = {}
+        self.reset()
 
     def reset(self):
+        print("Reset - draining messages")
+        self._update_messages()
+        print("Reset - messages drained")
         self.messages_seen = collections.Counter()
         self.cache = {}
         
@@ -50,6 +52,7 @@ class DastardListener():
                 # no message
                 return None
             topic, contents = r
+            #print((topic, contents))
             self.cache[topic] = contents
 
     def get_message_with_topic(self, target_topic: str) -> Union[list, dict]:
@@ -230,7 +233,7 @@ class DastardClient():
             channels_per_pixel = 2
         else:
             channels_per_pixel = 1
-        print(f"set_projectors founrce source_type={source_type} and therefore channels_per_pixel={channels_per_pixel}")
+        print(f"set_projectors found source_type={source_type} and therefore channels_per_pixel={channels_per_pixel}")
         configs = getProjectorConfigs(projector_filename,
                                       self.get_name_to_number_index())
         success_chans = []
@@ -251,9 +254,13 @@ class DastardClient():
         print(result)
 
     def get_source_status(self):
-        d = self.listener.get_message_with_topic("STATUS")
-        source = d.get('SourceName', 'None')
+        d = self.listener.get_message_with_topic("ALIVE")
         running = d.get('Running', False)
+        if running:
+            d = self.listener.get_message_with_topic("STATUS")
+            source = d.get('SourceName', 'None')
+        else:
+            source = "None"
         return (source, running)
 
     def get_n_channels(self):

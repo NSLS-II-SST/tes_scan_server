@@ -4,6 +4,7 @@ from PyQt5.QtCore import QObject, pyqtSignal, QTimer
 class ADRListener(QObject):
     newCycle = pyqtSignal(str)
     stateChanged = pyqtSignal(str)
+    event = pyqtSignal(str)
     def __init__(self, host='localhost', port=5021):
         super().__init__()
         context = zmq.Context()
@@ -31,6 +32,9 @@ class ADRListener(QObject):
                 if self.cache.get(k, "") != v:
                     self.newCycle.emit(v)
                     self.cache[k] = v
+            if k == 'event':
+                self.event.emit(v)
+                self.cache[k] = v
             else:
                 self.cache[k] = v
         return

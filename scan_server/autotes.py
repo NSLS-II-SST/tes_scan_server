@@ -1,11 +1,12 @@
 
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QPushButton,
                              QApplication, QVBoxLayout, QLabel,
-                             QMessageBox, QHBoxLayout)
+                             QMessageBox, QHBoxLayout, QCheckBox)
 from PyQt5.QtCore import QObject, pyqtSignal, QThread, pyqtSlot
 import subprocess
 import socket
 import json
+from functools import partial
 from .cringe_model import CringePowerOn, CringeAutotune
 from .nsls_server import create_tes
 from .rpc_server import RPCDispatch, get_dispatch_from
@@ -47,7 +48,7 @@ class AutoTES(QMainWindow):
         self.tes.moveToThread(self.tesThread)
         self.tesThread.start()
         
-        self.rpc = RPCDispatch("localhost", 4000, get_dispatch_from(tes))
+        self.rpc = RPCDispatch("", 4000, get_dispatch_from(tes))
         self.statusLabel = QLabel("Unknown")
 
         self.setupButton = QPushButton("Setup all TES")
@@ -56,6 +57,7 @@ class AutoTES(QMainWindow):
         self.dataButton = QPushButton("Start TES Data")
         self.tuneButton = QPushButton("Autotune TES")
 
+        self.autosetup = QCheckBox("Autosetup After Cycle")
         self.cryoStatus = QLabel("Unknown")
         self.tesStatus = QLabel("Unknown")
         self.writingStatus = QLabel("Unknown")
@@ -66,6 +68,7 @@ class AutoTES(QMainWindow):
         self.powerButton.clicked.connect(self.tesPowerStart)
         self.dataButton.clicked.connect(self.startData)
         self.tuneButton.clicked.connect(self.startAutotune)
+        self.autosetup.stateChanged.connect(self.sendAutosetup)
         self.tes.state_changed.connect(self.tesState.setText)
         #self.power_supplies = tower_power_supplies.TowerPowerSupplies()
         #self.scanner = ScannerComm("localhost", 4000)
@@ -74,7 +77,7 @@ class AutoTES(QMainWindow):
         self.tes.autotuned.connect(self.autotuneFinished)
         self.tes.lancero_on.connect(self.dataStarted)
         self.tes._adrListener.stateChanged.connect(self.cryoStatus.setText)
-
+        self.tes.autosetup_changed.connect(self.autosetup.setChecked)
         self.thread = QThread()
         self.rpc.moveToThread(self.thread)
         self.thread.started.connect(self.rpc.start)
@@ -93,6 +96,7 @@ class AutoTES(QMainWindow):
 
         statusLayout = QVBoxLayout()
         statusLayout.addWidget(QLabel("TES Status"))
+        statusLayout.addWidget(self.autosetup)
         
         statusSubLayout = QHBoxLayout()
         statusLabels = QVBoxLayout()
@@ -146,7 +150,11 @@ class AutoTES(QMainWindow):
         else:
             self.progButton.setStyleSheet("background-color : red")
             self.statusLabel.setText("Problem Starting TES Programs")
-            
+
+    def sendAutosetup(self, state):
+        should_autosetup = self.autosetup.isChecked()
+        self.rpc.call_method("autosetup", args=[should_autosetup])
+        
     def setupTES(self):
         success, err = self.rpc.call_method("start_programs", kwargs={"restart": True})
         if not success:
