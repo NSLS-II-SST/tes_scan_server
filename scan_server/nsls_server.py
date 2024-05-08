@@ -14,13 +14,13 @@ def create_tes():
     dastard_port = 5500
     time_human_readable = time_human()
     cdsettings = CringeDastardSettings(
-        record_nsamples=2000,
-        record_npresamples=1000,
-        trigger_threshold=-100,
-        trigger_n_monotonic=6,
+        record_nsamples=512,
+        record_npresamples=256,
+        trigger_threshold=250,
+        trigger_n_monotonic=3,
         write_ljh=True,
         write_off=True,
-        projector_filename=os.path.expanduser("~/.scan_server/nsls_projectors.hdf5")
+        projector_filename=os.path.expanduser("~/.scan_server/projectors.hdf5")
     )
     
 

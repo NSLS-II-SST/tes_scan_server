@@ -1,5 +1,5 @@
 import instruments
-from cringe.cringe_control import CringeControl
+# from cringe.cringe_control import CringeControl
 
 """
 import socket

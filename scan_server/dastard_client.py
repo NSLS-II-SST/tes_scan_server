@@ -14,6 +14,8 @@ import base64
 class DastardListener():
     def __init__(self, host, port):
         context = zmq.Context()
+        self.messages_seen = collections.Counter()
+        self.cache = {}
         self.socket = context.socket(zmq.SUB)
         self.host = host
         self.baseport = port+1
@@ -307,10 +309,10 @@ class DastardClient():
         'EdgeMulti': True, 
         # 'EdgeMultiNoise': False, 
         # 'EdgeMultiMakeShortRecords': False, 
-        # 'EdgeMultiMakeContaminatedRecords': False, 
-        # 'EdgeMultiDisableZeroThreshold': False, 
-        'EdgeMultiLevel': -100, 
-        'EdgeMultiVerifyNMonotone': 6}
+        'EdgeMultiMakeContaminatedRecords': False, 
+        'EdgeMultiDisableZeroThreshold': False, 
+        'EdgeMultiLevel': 250, 
+        'EdgeMultiVerifyNMonotone': 3}
         self._call("SourceControl.ConfigureTriggers", config)
 
     def set_noise_trigger_all_chans(self):
@@ -345,7 +347,37 @@ class DastardClient():
         }
         # print(f"config={config}")
         self._call("SourceControl.ConfigureTriggers", config)
+        
 
+# SEND SourceControl.ConfigureAbacoSource {"ActiveCards": [], "AvailableCards": [], "HostPortUDP": ["localhost:4000"], "Unwrap": true, "ResetAfter": 20000, "PulseSign": 1, "Bias": false, "RescaleRaw": true, "InvertChan": []}
+# SEND SourceControl.Start "ABACOSOURCE"
+# Starting Abaco
+# ABACO  4808: {'ActiveCards': [], 'AvailableCards': [], 'HostPortUDP': ['localhost:4000'], 'RescaleRaw': True, 'Unwrap': True, 'Bias': False, 'ResetAfter': 20000, 'PulseSign': 1, 'InvertChan': []}
+# STATUS  4809: {'Running': True, 'SourceName': 'Abaco', 'Nchannels': 4, 'Nsamples': 6000, 'Npresamp': 1500, 'SamplePeriod': 5000, 'ChanGroups': [{'Firstchan': 0, 'Nchan': 4}], 'ChannelsWithProjectors': []}
+# TRIGGER  4810: [{'ChannelIndices': [0, 1, 2, 3], 'AutoTrigger': False, 'AutoDelay': 250000000, 'AutoVetoRange': 0, 'LevelTrigger': True, 'LevelRising': True, 'LevelLevel': 4300, 'EdgeTrigger': False, 'EdgeRising': True, 'EdgeFalling': False, 'EdgeLevel': 100, 'EdgeMulti': False, 'EdgeMultiNoise': False, 'EdgeMultiMakeShortRecords': False, 'EdgeMultiMakeContaminatedRecords': False, 'EdgeMultiDisableZeroThreshold': False, 'EdgeMultiLevel': 0, 'EdgeMultiVerifyNMonotone': 0}]
+# GROUPTRIGGER  4811: {'Connections': {}}
+# CHANNELNAMES  4812: ['chan0', 'chan1', 'chan2', 'chan3']
+
+    def start_abaco(self):
+        config = {"ActiveCards": [], 
+                        "AvailableCards": [], 
+                        "HostPortUDP": ["10.0.15.100:4001"], 
+                        "Unwrap": True, 
+                        "ResetAfter": 2000, 
+                        "PulseSign": 1, 
+                        "Bias": True, 
+                        "RescaleRaw": True, 
+                        "InvertChan": []}
+        print("Start ABACO Config")
+        print(config)
+        okay = self._call("SourceControl.ConfigureAbacoSource", config)
+        if not okay:
+            return False
+        okay = self._call("SourceControl.Start", "ABACOSOURCE")
+        if not okay:
+            return False
+        return True
+    
     def start_lancero(self):
         """
         Ported over from dc.py

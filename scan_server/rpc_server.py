@@ -72,7 +72,6 @@ def get_dispatch_from(x):
                 d[m] = make_attribute_accessor(x, m)
     return d
 
-
 class RPCDispatch(QObject):
     gotMessage = pyqtSignal(object, str)
 
@@ -109,10 +108,12 @@ class RPCDispatch(QObject):
                 # accept connections from outside
                 (clientsocket, address) = serversocket.accept()
                 print(f"connection from {address}")
+                """
                 if address[0] not in ['10.66.48.205', '127.0.0.1']:
                     print("unapproved address")
                     clientsocket.close()
                     continue
+                """
                 while True:
                     data = get_message(clientsocket)
                     if data is None:

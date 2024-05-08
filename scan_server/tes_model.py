@@ -12,8 +12,11 @@ from dataclasses_json import dataclass_json
 import time
 from glob import glob
 from .dastard_client import DastardError
-from .cringe_model import CringeControl
-from .adr_model import ADRListener
+
+# from .cringe_model import CringeControl
+# from .adr_model import ADRListener
+# from .cringe_model import CringeControl
+
 
 
 @dataclass_json
@@ -58,8 +61,8 @@ class TESModel(QObject):
     crate_powered_off = pyqtSignal(str)
     programs_started = pyqtSignal(bool)
     programs_killed = pyqtSignal(bool)
-    lancero_on = pyqtSignal(bool)
-    lancero_off = pyqtSignal(bool)
+    abaco_on = pyqtSignal(bool)
+    abaco_off = pyqtSignal(bool)
     state_changed = pyqtSignal(str)
     autosetup_changed = pyqtSignal(bool)
     
@@ -67,15 +70,18 @@ class TESModel(QObject):
                  background_process_log_file, cdsettings):
         super().__init__()
         self._command_list = ['state', 'filename', 'scan_str', 'scan_num', 'next_scan_num',
-                              'cal_number', 'getFilenamePattern', 'start_lancero', 'start_programs',
-                              'kill_programs', 'check_programs_running', 'power_on_tes', 'autotune',
+                              'cal_number', 'getFilenamePattern', 'start_abaco', 'start_programs',
+                              'kill_programs', 'check_programs_running', 'stop_abaco',
                               'file_start', 'file_end', 'make_projectors', 'set_projectors',
                               'set_pulse_triggers', 'set_noise_triggers', 'scan_start',
                               'scan_point_start', 'scan_point_end', 'calibration_start',
-                              'scan_end', 'rsync_data', 'setup_tes', 'autosetup', 'adr_event_handler']
+                              'scan_end', 'rsync_data', 'setup_tes']
         self._dastard = dastard
-        self._cc = CringeControl()
-        self._start_adr_listener()
+
+
+        # self._start_adr_listener()
+        # self._cc = CringeControl()
+
         self._cdsettings = cdsettings
         self._base_user_output_dir = base_user_output_dir
         self._beamtime_id = beamtime_id
@@ -84,11 +90,13 @@ class TESModel(QObject):
         self._autosetup = False
         self._reset()
 
+    """
     def _start_adr_listener(self):
         self._adrListener = ADRListener()
         self._adrListener.event.connect(self.adr_event_handler)
         self._adrListener.start()
-        
+    """
+    
     def _reset(self):
         self._last_scan = None
         self._log_date = datetime.datetime.today().strftime("%Y%m%2d")
@@ -161,6 +169,7 @@ class TESModel(QObject):
                 return filepattern
         raise ValueError("Could not find a suitable directory name")
 
+    """
     def adr_event_handler(self, event):
         print(event)
         if event == 'regulate_after_cycle':
@@ -173,7 +182,8 @@ class TESModel(QObject):
                     self.file_end()
                 except (TransitionNotAllowed, DastardError):
                     pass
-
+    """
+    
     def setup_tes(self):
         print("starting programs")
         success = self.start_programs(restart=True)
@@ -187,8 +197,8 @@ class TESModel(QObject):
             print("failure")
             return success
         print("success")
-        success = self.start_lancero(restart=True)
-        print("starting lancero")
+        success = self.start_abaco(restart=True)
+        print("starting abaco")
         if not success:
             print("failure")
             return success
@@ -202,24 +212,25 @@ class TESModel(QObject):
         return success
     
     # Dastard operations
-    def start_lancero(self, restart=False):
+
+    def start_abaco(self, restart=False):
         source, running = self._dastard.get_source_status()
-        if source.lower() == 'lancero' and running:
-            print("lancero already running")
+        if source.lower() == 'abaco' and running:
+            print("abaco already running")
             if restart:
                 self._dastard.stop_source()
-                success = self._dastard.start_lancero()
+                success = self._dastard.start_abaco()
             else:
                 success = True
         else:
             print(source, running)
-            success = self._dastard.start_lancero()
-        self.lancero_on.emit(success)
+            success = self._dastard.start_abaco()
+        self.abaco_on.emit(success)
         return success
 
-    def stop_lancero(self):
+    def stop_abaco(self):
         success = self._dastard.stop_source()
-        self.lancero_off.emit(success)
+        self.abaco_off.emit(success)
         return success
     
     def start_programs(self, restart=False):
@@ -238,7 +249,7 @@ class TESModel(QObject):
         self._dastard.listener.reset()
         
     def check_programs_running(self):
-        programs = ["cringe", "dastard", "dcom"]
+        programs = ["dastard", "dcom"]
         proc_returns = [subprocess.run(["pgrep", prog], stdout=subprocess.PIPE)
                         for prog in programs]
         for r, prog in zip(proc_returns, programs):
@@ -246,18 +257,12 @@ class TESModel(QObject):
                 return False
         return True
 
-    def power_on_tes(self):
-        result = self._cc.setup_crate()
-        self.crate_powered_on.emit(result)
-        return result
 
-    def autotune(self):
-        self._cc.send_all_tower()
-        self._cc.shock_db1()
-        result = self._cc.full_tune()
-        self.set_pulse_triggers()
-        self.autotuned.emit(result)
-        return result
+    # def power_on_tes(self):
+    #     return self._cc.setup_crate()
+
+    # def autotune(self):
+    #     return self._cc.full_tune()
 
     def file_start(self, path=None, write_ljh=None, write_off=None,
                    setFilenamePattern=False):
@@ -441,4 +446,5 @@ class TESModel(QObject):
         if not self._overwrite:
             assert not os.path.isfile(filename1), f"{filename1} already exists"
             assert not os.path.isfile(filename2), f"{filename2} already exists"
+        print(f"log file names:\n{filename1=}\n{filename2=}")
         return [filename1, filename2]
