@@ -1,11 +1,12 @@
 from dataclasses import dataclass, field
-from dataclasses_json import dataclass_json
+import json
+#from dataclasses_json import dataclass_json
 from typing import List
 import io
 import os
 
 
-@dataclass_json
+#@dataclass_json
 @dataclass
 class BaseScan():
     var_name: str
@@ -65,23 +66,25 @@ class BaseScan():
     def to_disk(self, filename, overwrite=False):
         if not overwrite:
             assert not os.path.isfile(filename)
+        # with open(filename, "w") as f:
+        #     f.write(self.to_json(indent=2))
         with open(filename, "w") as f:
-            f.write(self.to_json(indent=2))
-
+            json.dump(self.__dict__, f)
+            
     @classmethod
     def from_file(cls, filename):
         with open(filename, "rb") as f:
             return cls.from_json(f.read())
 
 
-@dataclass_json
+#@dataclass_json
 @dataclass
 class DataScan(BaseScan):
     cal_number: int = -1
     calibration: bool = field(default=False)
 
 
-@dataclass_json
+#@dataclass_json
 @dataclass
 class CalibrationScan(BaseScan):
     routine: str = "none"
