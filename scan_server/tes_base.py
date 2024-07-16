@@ -1,4 +1,4 @@
-from scan_json import DataScan, CalibrationScan
+from .scan_json import DataScan, CalibrationScan
 from qtpy.QtCore import QObject, Signal, Slot
 import datetime
 import subprocess
@@ -6,15 +6,12 @@ import os
 from os.path import join, exists, basename, dirname
 from pathlib import Path
 from dataclasses import dataclass
-from dataclasses_json import dataclass_json
 import time
 from glob import glob
-from dastard_client import DastardError
-from rpc_server import get_dispatch_from, handle_one_message
+from .dastard_client import DastardError
+from .rpc_server import get_dispatch_from, handle_one_message
 
 
-
-@dataclass_json
 @dataclass
 class CringeDastardSettings:
     record_nsamples: int
@@ -47,21 +44,23 @@ class CringeDastardSettings:
 class TESModel(QObject):
     def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str,
                  background_process_log_file, cdsettings):
+        super().__init__()
         self._dastard = dastard
         self._cdsettings = cdsettings
         self._base_user_output_dir = base_user_output_dir
         self._background_process_log_file = background_process_log_file
         # self._state: ScannerState = ScannerState()
         self._state = "no_file"
-        self._dispatch = get_dispatch_from(self)
         self._reset()
+        self._dispatch = get_dispatch_from(self)
+
 
     def _reset(self):
         self._last_scan = None
         self._log_date = datetime.datetime.today().strftime("%Y%m%2d")
         self._scan = None
         self._cal_number: int = -1
-        self._scan_num = None
+        self._scan_num = -1
         self._scan_str = ""
         self._overwrite = False
         self._off_filename = None
@@ -91,7 +90,7 @@ class TESModel(QObject):
 
     @property
     def next_scan_num(self):
-        return self.scan_num + 1
+        return self._scan_num + 1
 
     @property
     def cal_number(self):

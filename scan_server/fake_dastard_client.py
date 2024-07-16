@@ -1,5 +1,5 @@
-from scan_server.rpc_server import get_dispatch_from
-from scan_server.dastard_client import DastardClient
+from .rpc_server import get_dispatch_from
+from .dastard_client import DastardClient
 from os.path import join
 
 def fakeMethodMaker(f):

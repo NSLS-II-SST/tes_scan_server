@@ -63,10 +63,11 @@ class TESModel(QObject):
     lancero_off = pyqtSignal(bool)
     state_changed = pyqtSignal(str)
     autosetup_changed = pyqtSignal(bool)
-    
+
     def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str,
                  background_process_log_file, cdsettings):
         super().__init__()
+
         self._command_list = ['state', 'filename', 'scan_str', 'scan_num', 'next_scan_num',
                               'cal_number', 'getFilenamePattern', 'start_lancero', 'start_programs',
                               'kill_programs', 'check_programs_running', 'power_on_tes', 'autotune',
@@ -89,7 +90,7 @@ class TESModel(QObject):
         self._adrListener = ADRListener()
         self._adrListener.event.connect(self.adr_event_handler)
         self._adrListener.start()
-        
+
     def _reset(self):
         self._last_scan = None
         self._log_date = datetime.datetime.today().strftime("%Y%m%2d")

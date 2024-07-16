@@ -12,6 +12,7 @@ def create_tes():
     Path(server_log_dir).mkdir(parents=True, exist_ok=True)
     dastard_host = "localhost"
     dastard_port = 5500
+
     time_human_readable = time_human()
     cdsettings = CringeDastardSettings(
         record_nsamples=2000,
@@ -28,6 +29,7 @@ def create_tes():
     dastard = DastardClient((dastard_host, dastard_port),
                             listener=dastard_listener)  # ,
     # pulse_trigger_params = None, noise_trigger_params = None)
+
     bg_log_file = open(os.path.join(server_log_dir, f"{time_human_readable}_bg.log"), 'a')
     tes = TESModel(dastard, beamtime_id, base_user_output_dir,
                    bg_log_file, cdsettings)
