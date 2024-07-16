@@ -20,6 +20,8 @@ class DastardListener():
         self.address = "tcp://%s:%d" % (self.host, self.baseport)
         self.socket.connect(self.address)
         self.socket.setsockopt_string(zmq.SUBSCRIBE, u"")
+        self.messages_seen = collections.Counter()
+        self.cache = {}
         self.reset()
 
     def reset(self):
@@ -217,6 +219,14 @@ class DastardClient():
         response = self._call("SourceControl.WriteControl", params)
         contents = self.listener.get_message_with_topic("WRITING")
         return contents
+
+    def is_writing(self):
+        contents = self.listener.get_message_with_topic("WRITING")
+        return contents.get("Active", False)
+
+    def projectors_are_loaded(self):
+        contents = self.listener.get_message_with_topic("STATUS")
+        
 
     def configure_record_lengths(self, npre, nsamp):
         params = {"Nsamp": nsamp,

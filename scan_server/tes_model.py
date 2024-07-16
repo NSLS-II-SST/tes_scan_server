@@ -14,6 +14,7 @@ from glob import glob
 from .dastard_client import DastardError
 from .cringe_model import CringeControl
 from .adr_model import ADRListener
+from shutil import copy
 
 
 @dataclass_json
@@ -98,6 +99,7 @@ class TESModel(QObject):
         self._scan_str = ""
         self._overwrite = False
         self._off_filename = None
+        self._last_projector_file = None
 
     @property
     def state(self):
@@ -269,13 +271,20 @@ class TESModel(QObject):
             write_ljh = self._cdsettings.write_ljh
         if write_off is None:
             write_off = self._cdsettings.write_off
-        self._state.file_start()
+        #if self._dastard.is_writing():
+        #    raise RuntimeError("Dastard reports it already has file open, try closing it first")
+
         if setFilenamePattern:
             filenamePattern = self.getFilenamePattern(path)
         else:
             filenamePattern = None
-        self._off_filename = self._dastard.start_file(write_ljh, write_off, path, filenamePattern)
-        self._log_date = os.path.basename(self._off_filename)[:8]
+        try:
+            self._off_filename = self._dastard.start_file(write_ljh, write_off, path, filenamePattern)
+            self._log_date = os.path.basename(self._off_filename)[:8]
+            self._state.file_start()
+        except DastardError as e:
+            self._off_filename = None
+            raise e
         return self._off_filename
 
     def file_end(self, _try_rsync_data=False, **rsync_kwargs):
@@ -288,9 +297,11 @@ class TESModel(QObject):
     def make_projectors(self, noise_file, pulse_file):
         args = ["make_projectors", "-rio", self._cdsettings.projector_filename,
                 pulse_file, noise_file]
+        pulse_folder = os.path.dirname(pulse_file)
         print(args)
         subprocess.run(args, stdout=self._background_process_log_file,
                        stderr=subprocess.STDOUT)
+        copy(self._cdsettings.projector_filename, pulse_folder)
 
     def set_projectors(self, projector_filename=None):
         if projector_filename is None:
@@ -315,7 +326,8 @@ class TESModel(QObject):
     # Scan operations
     def scan_start(self, var_name: str, var_unit: str, sample_id: int,
                    sample_desc: str, extra: dict = {}):
-        self._state.scan_start()
+        if not self._dastard.is_writing():
+            raise RuntimeError("No file is open!")
         for fname in self._log_filenames("scan", self.scan_num):
             if not self._overwrite:
                 assert not os.path.isfile(fname)
@@ -336,9 +348,10 @@ class TESModel(QObject):
         routine: str - which function is used to generate calibration
         curves from the data
         """
-        self._state.scan_start()
+        # self._state.scan_start()
         # self.set_pulse_triggers()
-
+        if not self._dastard.is_writing():
+            raise RuntimeError("No file is open!")
         data_path = self._dastard.get_data_path()
         self._scan = CalibrationScan(var_name, var_unit, self.scan_num,
                                      self._beamtime_id, sample_id,
@@ -349,39 +362,47 @@ class TESModel(QObject):
 
     def scan_point_start(self, scan_var: float, _epoch_time_s_for_test=None,
                          extra: dict = None):
-        self._state.scan_point_start()
+        # self._state.scan_point_start()
         if _epoch_time_s_for_test is None:
             _epoch_time_s_for_test = time.time()
         self._scan.point_start(scan_var, _epoch_time_s_for_test, extra)
         return _epoch_time_s_for_test
 
     def scan_point_end(self, _epoch_time_s_for_test=None):
-        self._state.scan_point_end()
+        # self._state.scan_point_end()
         if _epoch_time_s_for_test is None:
             _epoch_time_s_for_test = time.time()
         self._scan.point_end(_epoch_time_s_for_test)
         return _epoch_time_s_for_test
 
     def scan_end(self, _try_post_processing=False, _try_rsync_data=False, **rsync_kwargs):
-        self._state.scan_end()
-        self._scan.end()
-        scan_name = "calibration" if self._scan.calibration else "scan"
-        for fname in self._log_filenames(scan_name, self._scan.scan_num):
-            self._scan.to_disk(fname, self._overwrite)
-        self._last_scan = self._scan
-        self._advance_scan_num()
-        self._scan = None
-        self._scan_str = ""
-        self._dastard.set_experiment_state("PAUSE")
-        if _try_post_processing:
-            pass
+        # self._state.scan_end()
+        if self._scan is not None:
+            self._scan.end()
+            scan_name = "calibration" if self._scan.calibration else "scan"
+            for fname in self._log_filenames(scan_name, self._scan.scan_num):
+                self._scan.to_disk(fname, self._overwrite)
+            self._last_scan = self._scan
+            self._advance_scan_num()
+            self._scan = None
+            self._scan_str = ""
+            self._dastard.set_experiment_state("PAUSE")
+            if _try_post_processing:
+                pass
             # self.start_post_processing()
-        if _try_rsync_data:
-            self.rsync_data(**rsync_kwargs)
-
+            if _try_rsync_data:
+                self.rsync_data(**rsync_kwargs)
+        else:
+            self._scan_str = ""
+            self._dastard.set_experiment_state("PAUSE")
+            return "No scan was open"
+                
     def rsync_data(self, dest="/nsls2/data/sst/legacy/ucal/raw/%Y/%m/%2d", filename=None):
         if filename is None:
             filename = self._off_filename
+        if filename is None:
+            print("No file given, not going to rsync")
+            return
         from_dir = dirname(filename)
         date = datetime.datetime.strptime(basename(dirname(from_dir)), "%Y%m%d")
         to_dir = datetime.datetime.strftime(date, dest)
