@@ -93,16 +93,10 @@ class TESModel(QObject):
         self._config = config
         self._cc = cringe
         self._adrListener = adr
+        self._load_config()
         if self._adrListener is not None:
             self._start_adr_listener()
 
-        self._base_user_output_dir = expanduser(
-            self._config.get("base_user_output_dir")
-        )
-        self._beamtime_id = self._config.get("beamtime_id")
-        server_log_dir = expanduser(self._config.get("server_log_dir"))
-        bg_log_file = open(os.path.join(server_log_dir, f"{time_human()}_bg.log"), "a")
-        self._background_process_log_file = bg_log_file
         self._state: ScannerState = ScannerState(self.state_changed)
         self._autosetup = False
         self._reset()
@@ -110,6 +104,17 @@ class TESModel(QObject):
     def _start_adr_listener(self):
         self._adrListener.event.connect(self.adr_event_handler)
         self._adrListener.start()
+
+    def _load_config(self):
+        self._base_user_output_dir = expanduser(
+            self._config.get("base_user_output_dir")
+        )
+        self._beamtime_id = self._config.get("beamtime_id")
+        server_log_dir = expanduser(self._config.get("server_log_dir"))
+        Path(server_log_dir).mkdir(parents=True, exist_ok=True)
+
+        bg_log_file = open(os.path.join(server_log_dir, f"{time_human()}_bg.log"), "a")
+        self._background_process_log_file = bg_log_file
 
     def _reset(self):
         self._last_scan = None
@@ -263,17 +268,23 @@ class TESModel(QObject):
         return True
 
     def power_on_tes(self):
-        result = self._cc.setup_crate()
-        self.crate_powered_on.emit(result)
+        if self._cc is not None:
+            result = self._cc.setup_crate()
+            self.crate_powered_on.emit(result)
+        else:
+            result = True
         return result
 
     def autotune(self):
-        self._cc.send_all_tower()
-        self._cc.shock_db1()
-        result = self._cc.full_tune()
-        self.set_pulse_triggers()
-        self.autotuned.emit(result)
-        return result
+        if self._cc is not None:
+            self._cc.send_all_tower()
+            self._cc.shock_db1()
+            result = self._cc.full_tune()
+            self.set_pulse_triggers()
+            self.autotuned.emit(result)
+            return result
+        else:
+            return True
 
     def file_start(
         self, path=None, write_ljh=None, write_off=None, setFilenamePattern=False

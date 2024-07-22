@@ -44,3 +44,6 @@ base_user_output_dir = "~/userout"
 server_log_dir = "~/.scan_server"
 projector_filename = "~/.scan_server/nsls_projectors.hdf5"
 programs_to_check = ["dcom", "dastard", "cringe"]
+adr = false
+cringe = false
+beamtime_id = 1
