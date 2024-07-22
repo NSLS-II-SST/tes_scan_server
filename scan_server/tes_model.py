@@ -145,7 +145,7 @@ class TESModel(QObject):
     def autosetup(self, should_autosetup):
         self.autosetup_changed.emit(should_autosetup)
         self._autosetup = should_autosetup
-        
+
     def getFilenamePattern(self, path):
         """
         Bad name: really takes a path pattern (filled with strftime) where raw data is stored,
@@ -203,7 +203,7 @@ class TESModel(QObject):
         else:
             print("failure")
         return success
-    
+
     # Dastard operations
     def start_lancero(self, restart=False):
         source, running = self._dastard.get_source_status()
@@ -224,7 +224,7 @@ class TESModel(QObject):
         success = self._dastard.stop_source()
         self.lancero_off.emit(success)
         return success
-    
+
     def start_programs(self, restart=False):
         if restart:
             print("killing programs first")
@@ -239,7 +239,7 @@ class TESModel(QObject):
     def kill_programs(self):
         subprocess.Popen(['close_tes_programs.sh'])
         self._dastard.listener.reset()
-        
+
     def check_programs_running(self):
         programs = ["cringe", "dastard", "dcom"]
         proc_returns = [subprocess.run(["pgrep", prog], stdout=subprocess.PIPE)
