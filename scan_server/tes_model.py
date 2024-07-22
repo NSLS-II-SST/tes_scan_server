@@ -1,8 +1,9 @@
 from .scan_json import DataScan, CalibrationScan
 from PyQt5.QtCore import QObject, pyqtSignal
 import datetime
-from statemachine import StateMachine, State
-from statemachine.exceptions import TransitionNotAllowed
+
+# from statemachine import StateMachine, State
+# from statemachine.exceptions import TransitionNotAllowed
 import subprocess
 import os
 from os.path import join, exists, basename, dirname, expanduser
@@ -14,30 +15,30 @@ from .dastard_client import DastardError
 from shutil import copy
 
 
-class ScannerState(StateMachine):
-    """defines allowed state transitions, transitions will error if you do an invalid one"""
+# class ScannerState(StateMachine):
+#     """defines allowed state transitions, transitions will error if you do an invalid one"""
 
-    no_file = State("no_file", initial=True)
-    file_open = State("file_open")
-    scan = State("scan")
-    scan_point = State("scan_point")
-    # cal_data = State('cal_data')
+#     no_file = State("no_file", initial=True)
+#     file_open = State("file_open")
+#     scan = State("scan")
+#     scan_point = State("scan_point")
+#     # cal_data = State('cal_data')
 
-    scan_start = file_open.to(scan)
-    scan_end = scan.to(file_open)
+#     scan_start = file_open.to(scan)
+#     scan_end = scan.to(file_open)
 
-    scan_point_start = scan.to(scan_point)
-    scan_point_end = scan_point.to(scan)
+#     scan_point_start = scan.to(scan_point)
+#     scan_point_end = scan_point.to(scan)
 
-    file_start = no_file.to(file_open)
-    file_end = file_open.to(no_file)
+#     file_start = no_file.to(file_open)
+#     file_end = file_open.to(no_file)
 
-    def __init__(self, signal):
-        self.signal = signal
-        super().__init__()
+#     def __init__(self, signal):
+#         self.signal = signal
+#         super().__init__()
 
-    def on_enter_state(self, state):
-        self.signal.emit(state.name)
+#     def on_enter_state(self, state):
+#         self.signal.emit(state.name)
 
 
 class TESModel(QObject):
@@ -59,36 +60,6 @@ class TESModel(QObject):
 
         super().__init__()
 
-        self._command_list = [
-            "state",
-            "filename",
-            "scan_str",
-            "scan_num",
-            "next_scan_num",
-            "cal_number",
-            "getFilenamePattern",
-            "start_lancero",
-            "start_programs",
-            "kill_programs",
-            "check_programs_running",
-            "power_on_tes",
-            "autotune",
-            "file_start",
-            "file_end",
-            "make_projectors",
-            "set_projectors",
-            "set_pulse_triggers",
-            "set_noise_triggers",
-            "scan_start",
-            "scan_point_start",
-            "scan_point_end",
-            "calibration_start",
-            "scan_end",
-            "rsync_data",
-            "setup_tes",
-            "autosetup",
-            "adr_event_handler",
-        ]
         self._dastard = dastard
         self._config = config
         self._cc = cringe
@@ -97,7 +68,8 @@ class TESModel(QObject):
         if self._adrListener is not None:
             self._start_adr_listener()
 
-        self._state: ScannerState = ScannerState(self.state_changed)
+        # self._state: ScannerState = ScannerState(self.state_changed)
+        self._set_state("no_file")
         self._autosetup = False
         self._reset()
 
@@ -129,7 +101,8 @@ class TESModel(QObject):
 
     @property
     def state(self):
-        return self._state.current_state_value
+        # return self._state.current_state_value
+        return self._state
 
     @property
     def filename(self):
@@ -171,6 +144,10 @@ class TESModel(QObject):
         self.autosetup_changed.emit(should_autosetup)
         self._autosetup = should_autosetup
 
+    def _set_state(self, state):
+        self._state = state
+        self.state_changed.emit(self._state)
+
     def getFilenamePattern(self, path):
         """
         Bad name: really takes a path pattern (filled with strftime) where raw data is stored,
@@ -201,7 +178,7 @@ class TESModel(QObject):
                 print("Trying to stop file writing, if necessary")
                 try:
                     self.file_end()
-                except (TransitionNotAllowed, DastardError):
+                except DastardError:
                     pass
 
     def setup_tes(self):
@@ -309,14 +286,14 @@ class TESModel(QObject):
                 write_ljh, write_off, path, filenamePattern
             )
             self._log_date = os.path.basename(self._off_filename)[:8]
-            self._state.file_start()
+            self._set_state("file_open")
         except DastardError as e:
             self._off_filename = None
             raise e
         return self._off_filename
 
     def file_end(self, _try_rsync_data=False, **rsync_kwargs):
-        self._state.file_end()
+        self._set_state("no_file")
         self._dastard.stop_writing()
         if _try_rsync_data:
             self.rsync_data(**rsync_kwargs)
@@ -326,7 +303,7 @@ class TESModel(QObject):
         args = [
             "make_projectors",
             "-rio",
-            self._cdsettings.projector_filename,
+            self._config["projector_filename"],
             pulse_file,
             noise_file,
         ]
@@ -335,7 +312,7 @@ class TESModel(QObject):
         subprocess.run(
             args, stdout=self._background_process_log_file, stderr=subprocess.STDOUT
         )
-        copy(self._cdsettings.projector_filename, pulse_folder)
+        copy(self._config["projector_filename"], pulse_folder)
 
     def set_projectors(self, projector_filename=None):
         if projector_filename is None:
@@ -382,6 +359,7 @@ class TESModel(QObject):
         )
         self._scan_str = f"SCAN{self.scan_num}"
         self._dastard.set_experiment_state(self.scan_str)
+        self._set_state("scan")
 
     def calibration_start(
         self,
@@ -417,6 +395,7 @@ class TESModel(QObject):
         self._scan_str = f"CAL{self.scan_num}"
         self._dastard.set_experiment_state(self.scan_str)
         self._cal_number = self.scan_num
+        self._set_state("calibration")
 
     def scan_point_start(
         self, scan_var: float, _epoch_time_s_for_test=None, extra: dict = None
@@ -448,6 +427,7 @@ class TESModel(QObject):
             self._scan = None
             self._scan_str = ""
             self._dastard.set_experiment_state("PAUSE")
+            self._set_state("file_open")
             if _try_post_processing:
                 pass
             # self.start_post_processing()
