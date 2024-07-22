@@ -228,9 +228,16 @@ class AutoTES(QMainWindow):
 
 def main():
     import sys
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Start the AutoTES application with the given configuration file."
+    )
+    parser.add_argument("config_file", type=str, help="Path to the configuration file")
+    args = parser.parse_args()
 
     app = QApplication([])
-    tes = create_tes()
+    tes = create_tes(args.config_file)
 
     mainWindow = AutoTES(tes)
     mainWindow.show()

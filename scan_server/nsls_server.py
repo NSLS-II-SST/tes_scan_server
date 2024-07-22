@@ -1,7 +1,7 @@
+import argparse
 from .dastard_client import DastardClient, DastardListener
 from .tes_model import TESModel
 from .rpc_server import RPCDispatch, get_dispatch_from
-
 
 try:
     import tomllib
@@ -46,9 +46,17 @@ def create_tes(config_file):
 
 
 def start():
-    rpc_host = ""
-    rpc_port = 4000
-    tes = create_tes()
+    parser = argparse.ArgumentParser(
+        description="Start the TES server with the given configuration file."
+    )
+    parser.add_argument("config_file", type=str, help="Path to the configuration file")
+    parser.add_argument("--host", type=str, default="", help="RPC server host")
+    parser.add_argument("--port", type=int, default=4000, help="RPC server port")
+    args = parser.parse_args()
+
+    rpc_host = args.host
+    rpc_port = args.port
+    tes = create_tes(args.config_file)
     rpc = RPCDispatch(rpc_host, rpc_port, get_dispatch_from(tes))
     rpc.start()
 
