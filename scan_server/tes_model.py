@@ -1,39 +1,25 @@
 from .scan_json import DataScan, CalibrationScan
-from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QThread
+from PyQt5.QtCore import QObject, pyqtSignal
 import datetime
 from statemachine import StateMachine, State
 from statemachine.exceptions import TransitionNotAllowed
 import subprocess
 import os
-from os.path import join, exists, basename, dirname
+from os.path import join, exists, basename, dirname, expanduser
 from pathlib import Path
-from dataclasses import dataclass
-from dataclasses_json import dataclass_json
 import time
+from .rpc_server import time_human
 from glob import glob
 from .dastard_client import DastardError
-from .cringe_model import CringeControl
-from .adr_model import ADRListener
 from shutil import copy
 
 
-@dataclass_json
-@dataclass
-class CringeDastardSettings:
-    record_nsamples: int
-    record_npresamples: int
-    trigger_threshold: int
-    trigger_n_monotonic: int
-    write_off: bool
-    write_ljh: bool
-    projector_filename: str
-
-    
 class ScannerState(StateMachine):
     """defines allowed state transitions, transitions will error if you do an invalid one"""
-    no_file = State('no_file', initial=True)
+
+    no_file = State("no_file", initial=True)
     file_open = State("file_open")
-    scan = State('scan')
+    scan = State("scan")
     scan_point = State("scan_point")
     # cal_data = State('cal_data')
 
@@ -49,9 +35,10 @@ class ScannerState(StateMachine):
     def __init__(self, signal):
         self.signal = signal
         super().__init__()
-    
+
     def on_enter_state(self, state):
         self.signal.emit(state.name)
+
 
 class TESModel(QObject):
     autotuned = pyqtSignal(str)
@@ -64,30 +51,63 @@ class TESModel(QObject):
     state_changed = pyqtSignal(str)
     autosetup_changed = pyqtSignal(bool)
 
-    def __init__(self, dastard, beamtime_id: str, base_user_output_dir: str,
-                 background_process_log_file, cdsettings):
+    def __init__(self, dastard, config, adr=None, cringe=None):
+        # beamtime_id: str,
+        # base_user_output_dir: str,
+        # background_process_log_file,
+        # cdsettings,
+
         super().__init__()
 
-        self._command_list = ['state', 'filename', 'scan_str', 'scan_num', 'next_scan_num',
-                              'cal_number', 'getFilenamePattern', 'start_lancero', 'start_programs',
-                              'kill_programs', 'check_programs_running', 'power_on_tes', 'autotune',
-                              'file_start', 'file_end', 'make_projectors', 'set_projectors',
-                              'set_pulse_triggers', 'set_noise_triggers', 'scan_start',
-                              'scan_point_start', 'scan_point_end', 'calibration_start',
-                              'scan_end', 'rsync_data', 'setup_tes', 'autosetup', 'adr_event_handler']
+        self._command_list = [
+            "state",
+            "filename",
+            "scan_str",
+            "scan_num",
+            "next_scan_num",
+            "cal_number",
+            "getFilenamePattern",
+            "start_lancero",
+            "start_programs",
+            "kill_programs",
+            "check_programs_running",
+            "power_on_tes",
+            "autotune",
+            "file_start",
+            "file_end",
+            "make_projectors",
+            "set_projectors",
+            "set_pulse_triggers",
+            "set_noise_triggers",
+            "scan_start",
+            "scan_point_start",
+            "scan_point_end",
+            "calibration_start",
+            "scan_end",
+            "rsync_data",
+            "setup_tes",
+            "autosetup",
+            "adr_event_handler",
+        ]
         self._dastard = dastard
-        self._cc = CringeControl()
-        self._start_adr_listener()
-        self._cdsettings = cdsettings
-        self._base_user_output_dir = base_user_output_dir
-        self._beamtime_id = beamtime_id
-        self._background_process_log_file = background_process_log_file
+        self._config = config
+        self._cc = cringe
+        self._adrListener = adr
+        if self._adrListener is not None:
+            self._start_adr_listener()
+
+        self._base_user_output_dir = expanduser(
+            self._config.get("base_user_output_dir")
+        )
+        self._beamtime_id = self._config.get("beamtime_id")
+        server_log_dir = expanduser(self._config.get("server_log_dir"))
+        bg_log_file = open(os.path.join(server_log_dir, f"{time_human()}_bg.log"), "a")
+        self._background_process_log_file = bg_log_file
         self._state: ScannerState = ScannerState(self.state_changed)
         self._autosetup = False
         self._reset()
 
     def _start_adr_listener(self):
-        self._adrListener = ADRListener()
         self._adrListener.event.connect(self.adr_event_handler)
         self._adrListener.start()
 
@@ -160,13 +180,15 @@ class TESModel(QObject):
             sampledir = join(datedir, f"{i:04d}")
             if not exists(sampledir):
                 os.makedirs(sampledir)
-                filepattern = join(sampledir, today.strftime(f"%Y%m%2d_run{i:04d}_%%s.%%s"))
+                filepattern = join(
+                    sampledir, today.strftime(f"%Y%m%2d_run{i:04d}_%%s.%%s")
+                )
                 return filepattern
         raise ValueError("Could not find a suitable directory name")
 
     def adr_event_handler(self, event):
         print(event)
-        if event == 'regulate_after_cycle':
+        if event == "regulate_after_cycle":
             if self.autosetup:
                 print("Autosetup TES after Cycle End")
                 self.setup_tes()
@@ -190,7 +212,7 @@ class TESModel(QObject):
             print("failure")
             return success
         print("success")
-        success = self.start_lancero(restart=True)
+        success = self.start_source(restart=True)
         print("starting lancero")
         if not success:
             print("failure")
@@ -205,24 +227,14 @@ class TESModel(QObject):
         return success
 
     # Dastard operations
-    def start_lancero(self, restart=False):
-        source, running = self._dastard.get_source_status()
-        if source.lower() == 'lancero' and running:
-            print("lancero already running")
-            if restart:
-                self._dastard.stop_source()
-                success = self._dastard.start_lancero()
-            else:
-                success = True
-        else:
-            print(source, running)
-            success = self._dastard.start_lancero()
-        self.lancero_on.emit(success)
+    def start_source(self, restart=False):
+        success = self._dastard.start_source(restart=False)
+        self.source_on.emit(success)
         return success
 
-    def stop_lancero(self):
+    def stop_source(self):
         success = self._dastard.stop_source()
-        self.lancero_off.emit(success)
+        self.source_off.emit(success)
         return success
 
     def start_programs(self, restart=False):
@@ -230,20 +242,21 @@ class TESModel(QObject):
             print("killing programs first")
             self.kill_programs()
             time.sleep(2)
-        subprocess.Popen(['open_tes_programs.sh'])
+        subprocess.Popen(["open_tes_programs.sh"])
         time.sleep(5)
         success = self.check_programs_running()
         self.programs_started.emit(success)
         return success
 
     def kill_programs(self):
-        subprocess.Popen(['close_tes_programs.sh'])
+        subprocess.Popen(["close_tes_programs.sh"])
         self._dastard.listener.reset()
 
     def check_programs_running(self):
-        programs = ["cringe", "dastard", "dcom"]
-        proc_returns = [subprocess.run(["pgrep", prog], stdout=subprocess.PIPE)
-                        for prog in programs]
+        programs = self._config.get("programs_to_check", [])
+        proc_returns = [
+            subprocess.run(["pgrep", prog], stdout=subprocess.PIPE) for prog in programs
+        ]
         for r, prog in zip(proc_returns, programs):
             if r.returncode == 1:
                 return False
@@ -262,17 +275,18 @@ class TESModel(QObject):
         self.autotuned.emit(result)
         return result
 
-    def file_start(self, path=None, write_ljh=None, write_off=None,
-                   setFilenamePattern=False):
+    def file_start(
+        self, path=None, write_ljh=None, write_off=None, setFilenamePattern=False
+    ):
         """
         tell dastard to start a new file, must be called before any
         calibration or scan functions
         """
-        if write_ljh is None:
-            write_ljh = self._cdsettings.write_ljh
-        if write_off is None:
-            write_off = self._cdsettings.write_off
-        #if self._dastard.is_writing():
+        # if write_ljh is None:
+        #     write_ljh = self._cdsettings.write_ljh
+        # if write_off is None:
+        #     write_off = self._cdsettings.write_off
+        # if self._dastard.is_writing():
         #    raise RuntimeError("Dastard reports it already has file open, try closing it first")
 
         if setFilenamePattern:
@@ -280,7 +294,9 @@ class TESModel(QObject):
         else:
             filenamePattern = None
         try:
-            self._off_filename = self._dastard.start_file(write_ljh, write_off, path, filenamePattern)
+            self._off_filename = self._dastard.start_file(
+                write_ljh, write_off, path, filenamePattern
+            )
             self._log_date = os.path.basename(self._off_filename)[:8]
             self._state.file_start()
         except DastardError as e:
@@ -296,51 +312,74 @@ class TESModel(QObject):
         self._reset()
 
     def make_projectors(self, noise_file, pulse_file):
-        args = ["make_projectors", "-rio", self._cdsettings.projector_filename,
-                pulse_file, noise_file]
+        args = [
+            "make_projectors",
+            "-rio",
+            self._cdsettings.projector_filename,
+            pulse_file,
+            noise_file,
+        ]
         pulse_folder = os.path.dirname(pulse_file)
         print(args)
-        subprocess.run(args, stdout=self._background_process_log_file,
-                       stderr=subprocess.STDOUT)
+        subprocess.run(
+            args, stdout=self._background_process_log_file, stderr=subprocess.STDOUT
+        )
         copy(self._cdsettings.projector_filename, pulse_folder)
 
     def set_projectors(self, projector_filename=None):
         if projector_filename is None:
-            projector_filename = self._cdsettings.projector_filename
+            projector_filename = self._config.get("projector_filename")
         self._dastard.set_projectors(projector_filename)
 
     def set_pulse_triggers(self):
         # ideally record length and the trigger settings would easily vary based on config
         # so they should live in nsls_server.py
-        self._dastard.configure_record_lengths(nsamp=self._cdsettings.record_nsamples,
-                                               npre=self._cdsettings.record_npresamples)
+        self._dastard.configure_record_lengths()
         self._dastard.zero_all_triggers()
-        self._dastard.set_pulse_trigger_all_chans(threshold=self._cdsettings.trigger_threshold,
-                                                  n_monotone=self._cdsettings.trigger_n_monotonic)
+        self._dastard.set_pulse_trigger_all_chans()
 
     def set_noise_triggers(self):
-        self._dastard.configure_record_lengths(nsamp=self._cdsettings.record_nsamples,
-                                               npre=self._cdsettings.record_npresamples)
+        self._dastard.configure_record_lengths()
         self._dastard.zero_all_triggers()
         self._dastard.set_noise_trigger_all_chans()
 
     # Scan operations
-    def scan_start(self, var_name: str, var_unit: str, sample_id: int,
-                   sample_desc: str, extra: dict = {}):
+    def scan_start(
+        self,
+        var_name: str,
+        var_unit: str,
+        sample_id: int,
+        sample_desc: str,
+        extra: dict = {},
+    ):
         if not self._dastard.is_writing():
             raise RuntimeError("No file is open!")
         for fname in self._log_filenames("scan", self.scan_num):
             if not self._overwrite:
                 assert not os.path.isfile(fname)
         data_path = self._dastard.get_data_path()
-        self._scan = DataScan(var_name, var_unit, self.scan_num, self._beamtime_id,
-                              sample_id, sample_desc, extra, data_path,
-                              cal_number=self._cal_number)
+        self._scan = DataScan(
+            var_name,
+            var_unit,
+            self.scan_num,
+            self._beamtime_id,
+            sample_id,
+            sample_desc,
+            extra,
+            data_path,
+            cal_number=self._cal_number,
+        )
         self._scan_str = f"SCAN{self.scan_num}"
         self._dastard.set_experiment_state(self.scan_str)
 
-    def calibration_start(self, var_name: str, var_unit: str, sample_id: int,
-                          sample_desc: str, extra: dict = {}):
+    def calibration_start(
+        self,
+        var_name: str,
+        var_unit: str,
+        sample_id: int,
+        sample_desc: str,
+        extra: dict = {},
+    ):
         """
         start taking calibration data, ensure the appropriate x-rays are
         incident on the detector
@@ -354,15 +393,23 @@ class TESModel(QObject):
         if not self._dastard.is_writing():
             raise RuntimeError("No file is open!")
         data_path = self._dastard.get_data_path()
-        self._scan = CalibrationScan(var_name, var_unit, self.scan_num,
-                                     self._beamtime_id, sample_id,
-                                     sample_desc, extra, data_path)
+        self._scan = CalibrationScan(
+            var_name,
+            var_unit,
+            self.scan_num,
+            self._beamtime_id,
+            sample_id,
+            sample_desc,
+            extra,
+            data_path,
+        )
         self._scan_str = f"CAL{self.scan_num}"
         self._dastard.set_experiment_state(self.scan_str)
         self._cal_number = self.scan_num
 
-    def scan_point_start(self, scan_var: float, _epoch_time_s_for_test=None,
-                         extra: dict = None):
+    def scan_point_start(
+        self, scan_var: float, _epoch_time_s_for_test=None, extra: dict = None
+    ):
         # self._state.scan_point_start()
         if _epoch_time_s_for_test is None:
             _epoch_time_s_for_test = time.time()
@@ -376,7 +423,9 @@ class TESModel(QObject):
         self._scan.point_end(_epoch_time_s_for_test)
         return _epoch_time_s_for_test
 
-    def scan_end(self, _try_post_processing=False, _try_rsync_data=False, **rsync_kwargs):
+    def scan_end(
+        self, _try_post_processing=False, _try_rsync_data=False, **rsync_kwargs
+    ):
         # self._state.scan_end()
         if self._scan is not None:
             self._scan.end()
@@ -397,8 +446,10 @@ class TESModel(QObject):
             self._scan_str = ""
             self._dastard.set_experiment_state("PAUSE")
             return "No scan was open"
-                
-    def rsync_data(self, dest="/nsls2/data/sst/legacy/ucal/raw/%Y/%m/%2d", filename=None):
+
+    def rsync_data(
+        self, dest="/nsls2/data/sst/legacy/ucal/raw/%Y/%m/%2d", filename=None
+    ):
         if filename is None:
             filename = self._off_filename
         if filename is None:
@@ -414,7 +465,9 @@ class TESModel(QObject):
     # Below section is entirely concerned with creating/finding log filenames
     # Somehow, this should be locked away in a deep dark dungeon
     def _beamtime_user_output_dir(self, subdir=None, make=True):
-        dirname = os.path.join(self._base_user_output_dir, f"beamtime_{self._beamtime_id}")
+        dirname = os.path.join(
+            self._base_user_output_dir, f"beamtime_{self._beamtime_id}"
+        )
         if subdir is not None:
             dirname = os.path.join(dirname, subdir)
         if make:
@@ -443,7 +496,7 @@ class TESModel(QObject):
         else:
             scan_num = 0
         return scan_num
-        #return 0
+        # return 0
 
     def _tes_log_dir(self, make=True):
         dirname = os.path.join(os.path.dirname(self._off_filename), "logs")
