@@ -64,7 +64,9 @@ def make_attribute_accessor(x, a):
 
 def get_dispatch_from(x):
     d = collections.OrderedDict()
-    for m in sorted(x._command_list):
+    # for m in sorted(x._command_list):
+    # I do not remember why I moved from dir(x) to _command_list...
+    for m in sorted(dir(x)):
         if not m.startswith("_"):
             if callable(getattr(x, m)):
                 d[m] = getattr(x, m)

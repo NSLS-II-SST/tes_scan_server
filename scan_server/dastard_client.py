@@ -189,7 +189,7 @@ class DastardClient:
         return response
 
     def configure_simulate_pulse_source(
-        self, nchan, sample_rate_hz, pedestal, amplitudes, samples_per_pulse
+            self, nchan, sample_rate_hz, pedestal, amplitudes, samples_per_pulse
     ):
         params = {
             "Nchan": nchan,
@@ -201,7 +201,21 @@ class DastardClient:
         response = self._call("SourceControl.ConfigureSimPulseSource", params)
         return response
 
-    def start_sim_pulse_source(self):
+    def start_sim_pulse_source(self, nchan=None, sample_rate_hz=None, pedestal=None, amplitudes=None, samples_per_pulse=None):
+        params = {}
+        params.update(self.config.get('simulation', {}))
+        if nchan is not None:
+            params["Nchan"] = nchan
+        if sample_rate_hz is not None:
+            params["SampleRate"] = sample_rate_hz
+        if pedestal is not None:
+            params["Pedestal"] = pedestal
+        if amplitudes is not None:
+            params["Amplitudes"] = amplitudes
+        if samples_per_pulse is not None:
+            params["Nsamp"] = samples_per_pulse
+
+        response = self._call("SourceControl.ConfigureSimPulseSource", params)
         response = self._call("SourceControl.Start", "SIMPULSESOURCE")
         return response
 
