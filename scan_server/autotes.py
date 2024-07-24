@@ -59,15 +59,27 @@ class AutoTES(QMainWindow):
         else:
             self.hasADR = True
 
+        if self.tes._cc is None:
+            self.hasCringe = False
+        else:
+            self.hasCringe = True
+
         self.rpc = RPCDispatch("", 4000, get_dispatch_from(tes))
         self.statusLabel = QLabel("Unknown")
 
         self.setupButton = QPushButton("Setup all TES")
         self.progButton = QPushButton("Start TES Programs")
-        self.powerButton = QPushButton("Power TES On")
-        self.dataButton = QPushButton("Start TES Data")
-        self.tuneButton = QPushButton("Autotune TES")
 
+        self.dataButton = QPushButton("Start TES Data")
+
+        if self.hasCringe:
+            self.powerButton = QPushButton("Power TES On")
+            self.tuneButton = QPushButton("Autotune TES")
+            self.powerButton.clicked.connect(self.tesPowerStart)
+            self.tuneButton.clicked.connect(self.startAutotune)
+            self.tes.crate_powered_on.connect(self.tesPowerFinished)
+            self.tes.autotuned.connect(self.autotuneFinished)
+        
         if self.hasADR:
             self.autosetup = QCheckBox("Autosetup After Cycle")
             self.cryoStatus = QLabel("Unknown")
@@ -81,13 +93,9 @@ class AutoTES(QMainWindow):
 
         self.setupButton.clicked.connect(self.setupTES)
         self.progButton.clicked.connect(self.startPrograms)
-        self.powerButton.clicked.connect(self.tesPowerStart)
         self.dataButton.clicked.connect(self.startData)
-        self.tuneButton.clicked.connect(self.startAutotune)
         self.tes.state_changed.connect(self.tesState.setText)
         self.tes.programs_started.connect(self.programsStarted)
-        self.tes.crate_powered_on.connect(self.tesPowerFinished)
-        self.tes.autotuned.connect(self.autotuneFinished)
         self.tes.source_on.connect(self.dataStarted)
 
         self.thread = QThread()
@@ -100,9 +108,11 @@ class AutoTES(QMainWindow):
         setupLayout.addWidget(self.statusLabel)
         setupLayout.addWidget(self.setupButton)
         setupLayout.addWidget(self.progButton)
-        setupLayout.addWidget(self.powerButton)
+        if self.hasCringe:
+            setupLayout.addWidget(self.powerButton)
         setupLayout.addWidget(self.dataButton)
-        setupLayout.addWidget(self.tuneButton)
+        if self.hasCringe:
+            setupLayout.addWidget(self.tuneButton)
 
         mainLayout.addLayout(setupLayout)
 
@@ -140,12 +150,19 @@ class AutoTES(QMainWindow):
         print(msg)
 
     def disableButtons(self):
-        buttons = [self.progButton, self.powerButton, self.dataButton, self.tuneButton]
+        buttons = [self.progButton, self.dataButton]
+        if self.hasCringe:
+            buttons.append(self.powerButton)
+            buttons.append(self.tuneButton)
+
         for button in buttons:
             button.setEnabled(False)
 
     def enableButtons(self):
-        buttons = [self.progButton, self.powerButton, self.dataButton, self.tuneButton]
+        buttons = [self.progButton, self.dataButton]
+        if self.hasCringe:
+            buttons.append(self.powerButton)
+            buttons.append(self.tuneButton)
         for button in buttons:
             button.setEnabled(True)
 
@@ -173,13 +190,15 @@ class AutoTES(QMainWindow):
         success, err = self.rpc.call_method("start_programs", kwargs={"restart": True})
         if not success:
             return
-        success, err = self.rpc.call_method("power_on_tes")
-        if not success:
-            return
+        if self.hasCringe:
+            success, err = self.rpc.call_method("power_on_tes")
+            if not success:
+                return
         success, err = self.rpc.call_method("start_source", kwargs={"restart": True})
         if not success:
             return
-        success, err = self.rpc.call_method("autotune")
+        if self.hasCringe:
+            success, err = self.rpc.call_method("autotune")
 
     def startPrograms(self):
         print("Start programs")
