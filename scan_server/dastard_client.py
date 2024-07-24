@@ -448,9 +448,9 @@ class DastardClient:
         return True
 
     def start_abaco(self):
-        config = {}
+        config = {'AvailableCards': []}
         config.update(self.config.get("abaco"))
-        okay = self._call("SourceControl.ConfigureABACOSource", config)
+        okay = self._call("SourceControl.ConfigureAbacoSource", config)
         if not okay:
             return False
         okay = self._call("SourceControl.Start", "ABACOSOURCE")
