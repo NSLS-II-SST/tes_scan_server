@@ -189,7 +189,7 @@ class DastardClient:
         return response
 
     def configure_simulate_pulse_source(
-            self, nchan, sample_rate_hz, pedestal, amplitudes, samples_per_pulse
+        self, nchan, sample_rate_hz, pedestal, amplitudes, samples_per_pulse
     ):
         params = {
             "Nchan": nchan,
@@ -201,9 +201,16 @@ class DastardClient:
         response = self._call("SourceControl.ConfigureSimPulseSource", params)
         return response
 
-    def start_sim_pulse_source(self, nchan=None, sample_rate_hz=None, pedestal=None, amplitudes=None, samples_per_pulse=None):
+    def start_sim_pulse_source(
+        self,
+        nchan=None,
+        sample_rate_hz=None,
+        pedestal=None,
+        amplitudes=None,
+        samples_per_pulse=None,
+    ):
         params = {}
-        params.update(self.config.get('simulation', {}))
+        params.update(self.config.get("simulation", {}))
         if nchan is not None:
             params["Nchan"] = nchan
         if sample_rate_hz is not None:
@@ -441,7 +448,15 @@ class DastardClient:
         return True
 
     def start_abaco(self):
-        pass
+        config = {}
+        config.update(self.config.get("abaco"))
+        okay = self._call("SourceControl.ConfigureABACOSource", config)
+        if not okay:
+            return False
+        okay = self._call("SourceControl.Start", "ABACOSOURCE")
+        if not okay:
+            return False
+        return True
 
     def start_source(self, source=None, restart=False):
         source = self.config.get("default_source", source)

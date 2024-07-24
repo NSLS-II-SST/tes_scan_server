@@ -2,8 +2,6 @@ from .scan_json import DataScan, CalibrationScan
 from PyQt5.QtCore import QObject, pyqtSignal
 import datetime
 
-# from statemachine import StateMachine, State
-# from statemachine.exceptions import TransitionNotAllowed
 import subprocess
 import os
 from os.path import join, exists, basename, dirname, expanduser
@@ -15,49 +13,18 @@ from .dastard_client import DastardError
 from shutil import copy
 
 
-# class ScannerState(StateMachine):
-#     """defines allowed state transitions, transitions will error if you do an invalid one"""
-
-#     no_file = State("no_file", initial=True)
-#     file_open = State("file_open")
-#     scan = State("scan")
-#     scan_point = State("scan_point")
-#     # cal_data = State('cal_data')
-
-#     scan_start = file_open.to(scan)
-#     scan_end = scan.to(file_open)
-
-#     scan_point_start = scan.to(scan_point)
-#     scan_point_end = scan_point.to(scan)
-
-#     file_start = no_file.to(file_open)
-#     file_end = file_open.to(no_file)
-
-#     def __init__(self, signal):
-#         self.signal = signal
-#         super().__init__()
-
-#     def on_enter_state(self, state):
-#         self.signal.emit(state.name)
-
-
 class TESModel(QObject):
     autotuned = pyqtSignal(str)
     crate_powered_on = pyqtSignal(str)
     crate_powered_off = pyqtSignal(str)
     programs_started = pyqtSignal(bool)
     programs_killed = pyqtSignal(bool)
-    lancero_on = pyqtSignal(bool)
-    lancero_off = pyqtSignal(bool)
+    source_on = pyqtSignal(bool)
+    source_off = pyqtSignal(bool)
     state_changed = pyqtSignal(str)
     autosetup_changed = pyqtSignal(bool)
 
     def __init__(self, dastard, config, adr=None, cringe=None):
-        # beamtime_id: str,
-        # base_user_output_dir: str,
-        # background_process_log_file,
-        # cdsettings,
-
         super().__init__()
 
         self._dastard = dastard
@@ -195,7 +162,7 @@ class TESModel(QObject):
             return success
         print("success")
         success = self.start_source(restart=True)
-        print("starting lancero")
+        print("starting source")
         if not success:
             print("failure")
             return success
@@ -220,11 +187,13 @@ class TESModel(QObject):
         return success
 
     def start_programs(self, restart=False):
+        programs = self._config.get("programs_to_run", [])
+
         if restart:
             print("killing programs first")
             self.kill_programs()
             time.sleep(2)
-        subprocess.Popen(["open_tes_programs.sh"])
+        subprocess.Popen(["open_tes_programs.sh"] + programs)
         time.sleep(5)
         success = self.check_programs_running()
         self.programs_started.emit(success)
@@ -235,7 +204,7 @@ class TESModel(QObject):
         self._dastard.listener.reset()
 
     def check_programs_running(self):
-        programs = self._config.get("programs_to_check", [])
+        programs = self._config.get("programs_to_run", [])
         proc_returns = [
             subprocess.run(["pgrep", prog], stdout=subprocess.PIPE) for prog in programs
         ]

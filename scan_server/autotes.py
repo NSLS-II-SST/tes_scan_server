@@ -54,6 +54,11 @@ class AutoTES(QMainWindow):
         self.tes.moveToThread(self.tesThread)
         self.tesThread.start()
 
+        if self.tes._adrListener is None:
+            self.hasADR = False
+        else:
+            self.hasADR = True
+
         self.rpc = RPCDispatch("", 4000, get_dispatch_from(tes))
         self.statusLabel = QLabel("Unknown")
 
@@ -63,8 +68,13 @@ class AutoTES(QMainWindow):
         self.dataButton = QPushButton("Start TES Data")
         self.tuneButton = QPushButton("Autotune TES")
 
-        self.autosetup = QCheckBox("Autosetup After Cycle")
-        self.cryoStatus = QLabel("Unknown")
+        if self.hasADR:
+            self.autosetup = QCheckBox("Autosetup After Cycle")
+            self.cryoStatus = QLabel("Unknown")
+            self.autosetup.stateChanged.connect(self.sendAutosetup)
+            self.tes._adrListener.stateChanged.connect(self.cryoStatus.setText)
+            self.tes.autosetup_changed.connect(self.autosetup.setChecked)
+
         self.tesStatus = QLabel("Unknown")
         self.writingStatus = QLabel("Unknown")
         self.tesState = QLabel("Unknown")
@@ -74,14 +84,12 @@ class AutoTES(QMainWindow):
         self.powerButton.clicked.connect(self.tesPowerStart)
         self.dataButton.clicked.connect(self.startData)
         self.tuneButton.clicked.connect(self.startAutotune)
-        self.autosetup.stateChanged.connect(self.sendAutosetup)
         self.tes.state_changed.connect(self.tesState.setText)
         self.tes.programs_started.connect(self.programsStarted)
         self.tes.crate_powered_on.connect(self.tesPowerFinished)
         self.tes.autotuned.connect(self.autotuneFinished)
-        self.tes.lancero_on.connect(self.dataStarted)
-        self.tes._adrListener.stateChanged.connect(self.cryoStatus.setText)
-        self.tes.autosetup_changed.connect(self.autosetup.setChecked)
+        self.tes.source_on.connect(self.dataStarted)
+
         self.thread = QThread()
         self.rpc.moveToThread(self.thread)
         self.thread.started.connect(self.rpc.start)
@@ -100,18 +108,21 @@ class AutoTES(QMainWindow):
 
         statusLayout = QVBoxLayout()
         statusLayout.addWidget(QLabel("TES Status"))
-        statusLayout.addWidget(self.autosetup)
+        if self.hasADR:
+            statusLayout.addWidget(self.autosetup)
 
         statusSubLayout = QHBoxLayout()
         statusLabels = QVBoxLayout()
-        statusLabels.addWidget(QLabel("Cryostat:"))
+        if self.hasADR:
+            statusLabels.addWidget(QLabel("Cryostat:"))
         statusLabels.addWidget(QLabel("TES Ready:"))
         statusLabels.addWidget(QLabel("Writing:"))
         statusLabels.addWidget(QLabel("TES State:"))
         statusSubLayout.addLayout(statusLabels)
 
         statusReadout = QVBoxLayout()
-        statusReadout.addWidget(self.cryoStatus)
+        if self.hasADR:
+            statusReadout.addWidget(self.cryoStatus)
         statusReadout.addWidget(self.tesStatus)
         statusReadout.addWidget(self.writingStatus)
         statusReadout.addWidget(self.tesState)
@@ -165,7 +176,7 @@ class AutoTES(QMainWindow):
         success, err = self.rpc.call_method("power_on_tes")
         if not success:
             return
-        success, err = self.rpc.call_method("start_lancero", kwargs={"restart": True})
+        success, err = self.rpc.call_method("start_source", kwargs={"restart": True})
         if not success:
             return
         success, err = self.rpc.call_method("autotune")
@@ -198,7 +209,7 @@ class AutoTES(QMainWindow):
 
     def startData(self):
         print("Start tes Data")
-        response, err = self.rpc.call_method("start_lancero")
+        response, err = self.rpc.call_method("start_source")
         print(response)
 
     @pyqtSlot(bool)
