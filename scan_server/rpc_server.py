@@ -110,11 +110,14 @@ class RPCDispatch(QObject):
             while True:
                 # accept connections from outside
                 (clientsocket, address) = serversocket.accept()
+                """
+                # Horrible software firewall
                 print(f"connection from {address}")
                 if address[0] not in ['10.66.48.205', '127.0.0.1']:
                     print("unapproved address")
                     clientsocket.close()
                     continue
+                """
                 while True:
                     data = get_message(clientsocket)
                     if data is None:

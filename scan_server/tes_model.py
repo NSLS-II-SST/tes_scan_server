@@ -300,10 +300,11 @@ class TESModel(QObject):
         self._reset()
 
     def make_projectors(self, noise_file, pulse_file):
+        projector_filename = expanduser(self._config["projector_filename"])
         args = [
             "make_projectors",
             "-rio",
-            self._config["projector_filename"],
+            projector_filename,
             pulse_file,
             noise_file,
         ]
@@ -312,11 +313,11 @@ class TESModel(QObject):
         subprocess.run(
             args, stdout=self._background_process_log_file, stderr=subprocess.STDOUT
         )
-        copy(self._config["projector_filename"], pulse_folder)
+        copy(projector_filename, pulse_folder)
 
     def set_projectors(self, projector_filename=None):
         if projector_filename is None:
-            projector_filename = self._config.get("projector_filename")
+            projector_filename = expanduser(self._config.get("projector_filename"))
         self._dastard.set_projectors(projector_filename)
 
     def set_pulse_triggers(self):
