@@ -2,6 +2,9 @@ import argparse
 from .dastard_client import DastardClient, DastardListener
 from .tes_model import TESModel
 from .rpc_server import RPCDispatch, get_dispatch_from
+from .epics_server import EpicsServer
+from PyQt5.QtCore import QThread, QCoreApplication
+import sys
 
 try:
     import tomllib
@@ -9,10 +12,7 @@ except ModuleNotFoundError:
     import tomli as tomllib
 
 
-def create_tes(config_file):
-
-    with open(config_file, "rb") as f:
-        config = tomllib.load(f)
+def create_tes(config):
 
     dastard_config = config.get("dastard")
     tes_config = config.get("tes")
@@ -56,9 +56,32 @@ def start():
 
     rpc_host = args.host
     rpc_port = args.port
-    tes = create_tes(args.config_file)
+
+    with open(args.config_file, "rb") as f:
+        config = tomllib.load(f)
+
+    epics_config = config.pop("epics", {})
+    tes = create_tes(config)
+
+    # Create QCoreApplication
+    app = QCoreApplication(sys.argv)
+
+    # Create and start RPC server thread
+    rpc_thread = QThread()
     rpc = RPCDispatch(rpc_host, rpc_port, get_dispatch_from(tes))
-    rpc.start()
+    rpc.moveToThread(rpc_thread)
+    rpc_thread.started.connect(rpc.start)
+    rpc_thread.start()
+
+    # Create and start EPICS server thread
+    epics_thread = QThread()
+    epics_server = EpicsServer(tes, **epics_config)
+    epics_server.moveToThread(epics_thread)
+    epics_thread.started.connect(epics_server.start)
+    epics_thread.start()
+    print("TES Server started, ctrl-\\ to stop")
+    # Start the event loop
+    sys.exit(app.exec_())
 
 
 if __name__ == "__main__":

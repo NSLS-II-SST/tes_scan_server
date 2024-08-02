@@ -23,6 +23,15 @@ class TESModel(QObject):
     source_off = pyqtSignal(bool)
     state_changed = pyqtSignal(str)
     autosetup_changed = pyqtSignal(bool)
+    filename_changed = pyqtSignal(str)
+    scan_str_changed = pyqtSignal(str)  # New signal for _scan_str updates
+    scan_num_changed = pyqtSignal(int)  # New signal for _scan_num updates
+    noise_uid_changed = pyqtSignal(str)  # New signal for noise_uid updates
+    projector_uid_changed = pyqtSignal(str)  # New signal for projector_uid updates
+    rsync_on_file_end_changed = pyqtSignal(bool)  # New signal
+    rsync_on_scan_end_changed = pyqtSignal(bool)  # New signal
+    write_ljh_changed = pyqtSignal(bool)
+    write_off_changed = pyqtSignal(bool)
 
     def __init__(self, dastard, config, adr=None, cringe=None):
         super().__init__()
@@ -35,8 +44,7 @@ class TESModel(QObject):
         if self._adrListener is not None:
             self._start_adr_listener()
 
-        # self._state: ScannerState = ScannerState(self.state_changed)
-        self._set_state("no_file")
+        self._state = "no_file"  # Initialize the state
         self._autosetup = False
         self._reset()
 
@@ -56,6 +64,10 @@ class TESModel(QObject):
         self._background_process_log_file = bg_log_file
 
     def _reset(self):
+        self._noise_uid = ""
+        self._projector_uid = ""
+        self._rsync_on_file_end = self._config.get("rsync_on_file_end", False)
+        self._rsync_on_scan_end = self._config.get("rsync_on_scan_end", False)
         self._last_scan = None
         self._log_date = datetime.datetime.today().strftime("%Y%m%2d")
         self._scan = None
@@ -65,11 +77,18 @@ class TESModel(QObject):
         self._overwrite = False
         self._off_filename = None
         self._last_projector_file = None
+        self._write_ljh = self._config.get("write_ljh", True)
+        self._write_off = False
 
     @property
     def state(self):
-        # return self._state.current_state_value
         return self._state
+
+    @state.setter
+    def state(self, new_state):
+        if self._state != new_state:
+            self._state = new_state
+            self.state_changed.emit(self._state)
 
     @property
     def filename(self):
@@ -79,6 +98,12 @@ class TESModel(QObject):
     def scan_str(self):
         return self._scan_str
 
+    @scan_str.setter
+    def scan_str(self, value):
+        if self._scan_str != value:
+            self._scan_str = value
+            self.scan_str_changed.emit(self._scan_str)
+
     @property
     def scan_num(self):
         if self._scan_num is None:
@@ -86,9 +111,10 @@ class TESModel(QObject):
         return self._scan_num
 
     @scan_num.setter
-    def scan_num(self, scan_num):
-        self._scan_num = scan_num
-        return self._scan_num
+    def scan_num(self, value):
+        if self._scan_num != value:
+            self._scan_num = value
+            self.scan_num_changed.emit(self._scan_num)
 
     @property
     def next_scan_num(self):
@@ -99,7 +125,7 @@ class TESModel(QObject):
         return self._cal_number
 
     def _advance_scan_num(self):
-        self._scan_num = self.scan_num + 1
+        self.scan_num = self.scan_num + 1
         return self._scan_num
 
     @property
@@ -111,9 +137,65 @@ class TESModel(QObject):
         self.autosetup_changed.emit(should_autosetup)
         self._autosetup = should_autosetup
 
-    def _set_state(self, state):
-        self._state = state
-        self.state_changed.emit(self._state)
+    @property
+    def noise_uid(self):
+        return self._noise_uid
+
+    @noise_uid.setter
+    def noise_uid(self, value):
+        if self._noise_uid != value:
+            self._noise_uid = value
+            self.noise_uid_changed.emit(self._noise_uid)
+
+    @property
+    def projector_uid(self):
+        return self._projector_uid
+
+    @projector_uid.setter
+    def projector_uid(self, value):
+        if self._projector_uid != value:
+            self._projector_uid = value
+            self.projector_uid_changed.emit(self._projector_uid)
+
+    @property
+    def rsync_on_file_end(self):
+        return self._rsync_on_file_end
+
+    @rsync_on_file_end.setter
+    def rsync_on_file_end(self, value):
+        if self._rsync_on_file_end != value:
+            self._rsync_on_file_end = value
+            self.rsync_on_file_end_changed.emit(self._rsync_on_file_end)
+
+    @property
+    def rsync_on_scan_end(self):
+        return self._rsync_on_scan_end
+
+    @rsync_on_scan_end.setter
+    def rsync_on_scan_end(self, value):
+        if self._rsync_on_scan_end != value:
+            self._rsync_on_scan_end = value
+            self.rsync_on_scan_end_changed.emit(self._rsync_on_scan_end)
+
+    @property
+    def write_ljh(self):
+        return self._write_ljh
+
+    @write_ljh.setter
+    def write_ljh(self, value):
+        if self._write_ljh != value:
+            self._write_ljh = value
+            self.write_ljh_changed.emit(self._write_ljh)
+
+    @property
+    def write_off(self):
+        return self._write_off
+
+    @write_off.setter
+    def write_off(self, value):
+        if self._write_off != value:
+            self._write_off = value
+            self.write_off_changed.emit(self._write_off)
 
     def getFilenamePattern(self, path):
         """
@@ -239,31 +321,31 @@ class TESModel(QObject):
         tell dastard to start a new file, must be called before any
         calibration or scan functions
         """
-        # if write_ljh is None:
-        #     write_ljh = self._cdsettings.write_ljh
-        # if write_off is None:
-        #     write_off = self._cdsettings.write_off
-        # if self._dastard.is_writing():
-        #    raise RuntimeError("Dastard reports it already has file open, try closing it first")
-
         if setFilenamePattern:
             filenamePattern = self.getFilenamePattern(path)
         else:
             filenamePattern = None
         try:
             self._off_filename = self._dastard.start_file(
-                write_ljh, write_off, path, filenamePattern
+                write_ljh if write_ljh is not None else self.write_ljh,
+                write_off if write_off is not None else self.write_off,
+                path,
+                filenamePattern,
             )
+            self.filename_changed.emit(self._off_filename)
             self._log_date = os.path.basename(self._off_filename)[:8]
-            self._set_state("file_open")
+            self.state = "file_open"
         except DastardError as e:
             self._off_filename = None
             raise e
         return self._off_filename
 
-    def file_end(self, _try_rsync_data=False, **rsync_kwargs):
-        self._set_state("no_file")
+    def file_end(self, _try_rsync_data=None, **rsync_kwargs):
+        self.state = "no_file"
         self._dastard.stop_writing()
+        self.filename_changed.emit("")
+        if _try_rsync_data is None:
+            _try_rsync_data = self.rsync_on_file_end
         if _try_rsync_data:
             self.rsync_data(**rsync_kwargs)
         self._reset()
@@ -288,6 +370,8 @@ class TESModel(QObject):
         if projector_filename is None:
             projector_filename = expanduser(self._config.get("projector_filename"))
         self._dastard.set_projectors(projector_filename)
+        self._write_off = self._config.get("write_off", True)  # Load from config
+        self.write_off_changed.emit(self._write_off)
 
     def set_pulse_triggers(self):
         # ideally record length and the trigger settings would easily vary based on config
@@ -327,9 +411,9 @@ class TESModel(QObject):
             data_path,
             cal_number=self._cal_number,
         )
-        self._scan_str = f"SCAN{self.scan_num}"
+        self.scan_str = f"SCAN{self.scan_num}"
         self._dastard.set_experiment_state(self.scan_str)
-        self._set_state("scan")
+        self.state = "scan"
 
     def calibration_start(
         self,
@@ -362,10 +446,10 @@ class TESModel(QObject):
             extra,
             data_path,
         )
-        self._scan_str = f"CAL{self.scan_num}"
+        self.scan_str = f"CAL{self.scan_num}"
         self._dastard.set_experiment_state(self.scan_str)
         self._cal_number = self.scan_num
-        self._set_state("calibration")
+        self.state = "calibration"
 
     def scan_point_start(
         self, scan_var: float, _epoch_time_s_for_test=None, extra: dict = None
@@ -384,7 +468,7 @@ class TESModel(QObject):
         return _epoch_time_s_for_test
 
     def scan_end(
-        self, _try_post_processing=False, _try_rsync_data=False, **rsync_kwargs
+        self, _try_post_processing=False, _try_rsync_data=None, **rsync_kwargs
     ):
         # self._state.scan_end()
         if self._scan is not None:
@@ -395,16 +479,18 @@ class TESModel(QObject):
             self._last_scan = self._scan
             self._advance_scan_num()
             self._scan = None
-            self._scan_str = ""
+            self.scan_str = ""
             self._dastard.set_experiment_state("PAUSE")
-            self._set_state("file_open")
+            self.state = "file_open"
             if _try_post_processing:
                 pass
             # self.start_post_processing()
+            if _try_rsync_data is None:
+                _try_rsync_data = self.rsync_on_scan_end
             if _try_rsync_data:
                 self.rsync_data(**rsync_kwargs)
         else:
-            self._scan_str = ""
+            self.scan_str = ""
             self._dastard.set_experiment_state("PAUSE")
             return "No scan was open"
 

@@ -49,8 +49,14 @@ Nsamp = 1024
 [tes]
 base_user_output_dir = "~/userout"
 server_log_dir = "~/.scan_server"
-projector_filename = "~/.scan_server/nsls_projectors.hdf5"
+projector_filename = "~/.dastard/projectors.hdf5"
+projector_cmd = ["make_projectors", "-ro"]
 programs_to_check = ["dcom", "dastard", "cringe"]
 adr = false
 cringe = false
 beamtime_id = 1
+rsync_on_file_end = false
+rsync_on_scan_end = false
+
+[epics]
+prefix="SIM_TES:"
