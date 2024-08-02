@@ -9,32 +9,49 @@ from typing import Union
 import time
 import numpy as np
 import base64
+from PyQt5.QtCore import QObject, QThread, pyqtSignal, QTimer
 
 
-class DastardListener:
+class DastardListener(QObject):
+    message_received = pyqtSignal(str, object)
+
     def __init__(self, host, port):
-        context = zmq.Context()
-        self.socket = context.socket(zmq.SUB)
+        super().__init__()
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.SUB)
         self.host = host
         self.baseport = port + 1
-        self.address = "tcp://%s:%d" % (self.host, self.baseport)
+        self.address = f"tcp://{self.host}:{self.baseport}"
         self.socket.connect(self.address)
         self.socket.setsockopt_string(zmq.SUBSCRIBE, "")
         self.messages_seen = collections.Counter()
         self.cache = {}
-        self.reset()
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_messages)
 
-    def reset(self):
-        print("Reset - draining messages")
-        self._update_messages()
-        print("Reset - messages drained")
-        self.messages_seen = collections.Counter()
-        self.cache = {}
+    def start(self):
+        self.timer.start(1000)  # Update every 1 second
+
+    def stop(self):
+        self.timer.stop()
+
+    def update_messages(self):
+        while True:
+            try:
+                topic, contents = self.get_message()
+
+                if topic is None:
+                    break
+                self.cache[topic] = contents
+                self.message_received.emit(topic, contents)
+            except Exception as e:
+                print(f"Error updating messages: {e}")
+
+                break
 
     def get_message(self):
-        # Check socket for events, with 100 ms timeout
         if self.socket.poll(100) == 0:
-            return None
+            return None, None
 
         msg = self.socket.recv_multipart()
         try:
@@ -46,71 +63,116 @@ class DastardListener:
         self.messages_seen[topic] += 1
         return topic, contents
 
-    def _update_messages(self):
-        """get all messages form dastard, store them in self.cache"""
-        while True:
-            r = self.get_message()
-            if r is None:
-                # no message
-                return None
-            topic, contents = r
-            # print((topic, contents))
-            self.cache[topic] = contents
+    def get_message_with_topic(self, target_topic: str):
+        return self.cache.get(target_topic)
 
-    def get_message_with_topic(self, target_topic: str) -> Union[list, dict]:
-        """first update messages, which updates self.cache
-        then retrieve the latest message for a given topic
-        from self.cache
-        """
-        # print("get_message_with_topic")
-        self._update_messages()
-        contents = self.cache[target_topic]
-        return contents
+    def reset(self):
+        print("Reset - draining messages")
+        self.update_messages()
+        print("Reset - messages drained")
+        self.messages_seen = collections.Counter()
+        self.cache = {}
 
 
 class DastardError(Exception):
     pass
 
 
-class DastardClient:
-    """
-    Assumptions:
-    1. Dastard has just been started.
-    2. A source has just been stareted.
-    3. Projectors have been loaded.
-    4. Triggers have been set.
-    5. (implied by above) Dastard is not writing.
+class DastardClient(QObject):
+    state_changed = pyqtSignal(str)
+    writing_changed = pyqtSignal(bool)
+    channel_names_changed = pyqtSignal(list)
+    status_updated = pyqtSignal(dict)
+    source_changed = pyqtSignal(str)
+    running_changed = pyqtSignal(bool)
+    filename_changed = pyqtSignal(str)
+    connected_changed = pyqtSignal(bool)
 
-    Potential Future:
-
-    We could instead reduce the assumptions to:
-    1. Dastard has a source running.
-    2. Dastard is not writing.
-    3. Projectors have been loaded.
-    4. Triggers have been set.
-
-    We may also want TESScanner to load projectors and/or set triggers.
-    """
-
-    def __init__(self, addr_port, listener, config={}):
+    def __init__(self, addr_port, config={}):
+        super().__init__()
         self.addr_port = addr_port
-        self.listener = listener
         self.config = config
         self._id_iter = itertools.count()
-        self.connected = False
+        self._connected = False
         self._connect()
-        if self.connected:
+
+        self.listener_thread = QThread()
+        self.listener = DastardListener(*self.addr_port)
+        self.listener.moveToThread(self.listener_thread)
+        self.listener_thread.started.connect(self.listener.start)
+        self.listener.message_received.connect(self.handle_message)
+        self.listener_thread.start()
+
+        # Initialize state variables
+        self._source = "None"
+        self._running = False
+        self._channel_names = []
+        self._writing = False
+        self._off_filename = ""
+
+        if self._connected:
             self._request_status()  # request one set of all messages on startup
+
+    def __del__(self):
+        self.listener.stop()
+        self.listener_thread.quit()
+        self.listener_thread.wait()
+
+    def handle_message(self, topic, contents):
+        if topic == "ALIVE":
+            running = contents.get("Running", False)
+            if self._running != running:
+                self._running = running
+                self.running_changed.emit(self._running)
+
+        elif topic == "STATUS":
+            if self._running:
+                source = contents.get("SourceName", "None")
+                if self._source != source:
+                    self._source = source
+                    self.source_changed.emit(self._source)
+            self.status_updated.emit(contents)
+
+        elif topic == "CHANNELNAMES":
+            if self._channel_names != contents:
+                self._channel_names = contents
+                self.channel_names_changed.emit(self._channel_names)
+
+        elif topic == "WRITING":
+            writing = contents.get("Active", False)
+            if self._writing != writing:
+                self._writing = writing
+                self.writing_changed.emit(self._writing)
+            if writing:
+                filename = contents["FilenamePattern"] % ("chan1", "off")
+                if self._off_filename != filename:
+                    self.filename_changed.emit(filename)
+                    self._off_filename = filename
+            elif self._off_filename != "":
+                self._off_filename = ""
+                self.filename_changed.emit("")
+
+        elif topic == "STATE":
+            self.state_changed.emit(contents)
 
     def _connect(self):
         try:
             self._socket = socket.create_connection(self.addr_port)
-            self.connected = True
+            self._set_connected(True)
         except socket.error as ex:
             host, port = self.addr_port
             print(f"Could not connect to Dastard at {host}:{port}")
-            self.connected = False
-        return self.connected
+            self._set_connected(False)
+        return self._connected
+
+    def _set_connected(self, value):
+        if self._connected != value:
+            self._connected = value
+            self.connected_changed.emit(self._connected)
+
+    @property
+    def connected(self):
+        return self._connected
 
     def _message(self, method_name, params):
         if not isinstance(params, list):
@@ -119,9 +181,9 @@ class DastardClient:
         return d
 
     def _call(self, method_name: str, params, verbose=True):
-        if not self.connected:
+        if not self._connected:
             self._connect()
-        if not self.connected:
+        if not self._connected:
             raise DastardError(
                 "Not able to connect to Dastard, check running and try again"
             )
@@ -164,9 +226,7 @@ class DastardClient:
     def start_file(self, ljh22=None, off=None, path=None, filenamePattern=None):
         params = {"Request": "Start", "WriteLJH3": False}
         params.update(self.config.get("WriteControl", {}))
-        #     "WriteLJH22": ljh22,
-        #     "WriteOFF": off,
-        # }
+
         if ljh22 is not None:
             params["WriteLJH22"] = ljh22
         if off is not None:
@@ -242,8 +302,7 @@ class DastardClient:
         return contents
 
     def is_writing(self):
-        contents = self.listener.get_message_with_topic("WRITING")
-        return contents.get("Active", False)
+        return self._writing
 
     def projectors_are_loaded(self):
         contents = self.listener.get_message_with_topic("STATUS")
@@ -258,7 +317,7 @@ class DastardClient:
         return response
 
     def get_data_path(self):
-        return self.off_filename
+        return self._off_filename
 
     def set_projectors(self, projector_filename):
         source_type, _ = self.get_source_status()
@@ -294,33 +353,19 @@ class DastardClient:
         print(result)
 
     def get_source_status(self):
-        d = self.listener.get_message_with_topic("ALIVE")
-        running = d.get("Running", False)
-        if running:
-            d = self.listener.get_message_with_topic("STATUS")
-            source = d.get("SourceName", "None")
-        else:
-            source = "None"
-        return (source, running)
+        return self._source, self._writing
 
     def get_n_channels(self):
         return len(self.get_name_to_number_index())
 
     def get_channel_names(self):
-        # print("get_channel_names")
-        d = self.listener.get_message_with_topic("CHANNELNAMES")
-        # print(f"d={d}")
-        channel_names = []
-        for name in d:
-            channel_names.append(name)
-        return channel_names
+        return self._channel_names
 
     # dastard channelNames go from chan1 to chanN and err1 to errN
     # we need to map from channelName to channelIndex (0-2N-1)
     def get_name_to_number_index(self):
         nameNumberToIndex = {}
-        channel_names = self.get_channel_names()
-        for i, name in enumerate(channel_names):
+        for i, name in enumerate(self._channel_names):
             if not name.startswith("chan"):
                 continue
             nameNumber = int(name[4:])
@@ -448,7 +493,7 @@ class DastardClient:
         return True
 
     def start_abaco(self):
-        config = {'AvailableCards': []}
+        config = {"AvailableCards": []}
         config.update(self.config.get("abaco"))
         okay = self._call("SourceControl.ConfigureAbacoSource", config)
         if not okay:

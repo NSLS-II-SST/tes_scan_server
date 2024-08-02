@@ -46,6 +46,7 @@ class EpicsServer(QObject):
         self.connect_and_initialize("rsync_on_scan_end", "RSYNC_ON_SCAN_END")
         self.connect_and_initialize("write_ljh", "WRITE_LJH")
         self.connect_and_initialize("write_off", "WRITE_OFF")
+        self.connect_and_initialize("dastard_connected", "CONNECTED")
 
         print("EpicsServer started")
 

@@ -20,10 +20,8 @@ def create_tes(config):
     dastard_host = dastard_config.get("host")
     dastard_port = dastard_config.get("port")
 
-    dastard_listener = DastardListener(dastard_host, dastard_port)
-    dastard = DastardClient(
-        (dastard_host, dastard_port), listener=dastard_listener, config=dastard_config
-    )
+    # dastard_listener = DastardListener(dastard_host, dastard_port)
+    dastard = DastardClient((dastard_host, dastard_port), config=dastard_config)
 
     if tes_config.get("cringe", False):
         from .cringe_model import CringeControl
@@ -61,10 +59,12 @@ def start():
         config = tomllib.load(f)
 
     epics_config = config.pop("epics", {})
+
+    app = QCoreApplication(sys.argv)
+
     tes = create_tes(config)
 
     # Create QCoreApplication
-    app = QCoreApplication(sys.argv)
 
     # Create and start RPC server thread
     rpc_thread = QThread()

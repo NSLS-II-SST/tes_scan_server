@@ -24,14 +24,22 @@ class TESModel(QObject):
     state_changed = pyqtSignal(str)
     autosetup_changed = pyqtSignal(bool)
     filename_changed = pyqtSignal(str)
-    scan_str_changed = pyqtSignal(str)  # New signal for _scan_str updates
-    scan_num_changed = pyqtSignal(int)  # New signal for _scan_num updates
-    noise_uid_changed = pyqtSignal(str)  # New signal for noise_uid updates
-    projector_uid_changed = pyqtSignal(str)  # New signal for projector_uid updates
-    rsync_on_file_end_changed = pyqtSignal(bool)  # New signal
-    rsync_on_scan_end_changed = pyqtSignal(bool)  # New signal
+    scan_str_changed = pyqtSignal(str)
+    scan_num_changed = pyqtSignal(int)
+    noise_uid_changed = pyqtSignal(str)
+    projector_uid_changed = pyqtSignal(str)
+    rsync_on_file_end_changed = pyqtSignal(bool)
+    rsync_on_scan_end_changed = pyqtSignal(bool)
     write_ljh_changed = pyqtSignal(bool)
     write_off_changed = pyqtSignal(bool)
+
+    # New signals to relay from DastardClient
+    writing_changed = pyqtSignal(bool)
+    channel_names_changed = pyqtSignal(list)
+    status_updated = pyqtSignal(dict)
+    source_changed = pyqtSignal(str)
+    running_changed = pyqtSignal(bool)
+    dastard_connected_changed = pyqtSignal(bool)
 
     def __init__(self, dastard, config, adr=None, cringe=None):
         super().__init__()
@@ -44,9 +52,36 @@ class TESModel(QObject):
         if self._adrListener is not None:
             self._start_adr_listener()
 
-        self._state = "no_file"  # Initialize the state
+        self._state = "no_file"
         self._autosetup = False
         self._reset()
+
+        # Connect DastardClient signals
+        self._dastard.state_changed.connect(self.state_changed)
+        self._dastard.writing_changed.connect(self.writing_changed)
+        self._dastard.channel_names_changed.connect(self.channel_names_changed)
+        self._dastard.status_updated.connect(self.status_updated)
+        self._dastard.source_changed.connect(self.source_changed)
+        self._dastard.running_changed.connect(self.running_changed)
+        self._dastard.filename_changed.connect(self.handle_filename_changed)
+        self._dastard.connected_changed.connect(self.handle_connected_changed)
+
+    def handle_filename_changed(self, filename):
+        if self._off_filename != filename:
+            self._off_filename = filename
+            self.filename_changed.emit(filename)
+            if filename != "":
+                self._log_date = os.path.basename(self._off_filename)[:8]
+                self.state = "file_open"
+            else:
+                self.state = "no_file"
+
+    def handle_connected_changed(self, connected):
+        # Handle connection status changes here
+        print(
+            f"Dastard connection status changed: {'Connected' if connected else 'Disconnected'}"
+        )
+        self.dastard_connected_changed.emit(connected)
 
     def _start_adr_listener(self):
         self._adrListener.event.connect(self.adr_event_handler)
@@ -198,13 +233,6 @@ class TESModel(QObject):
             self.write_off_changed.emit(self._write_off)
 
     def getFilenamePattern(self, path):
-        """
-        Bad name: really takes a path pattern (filled with strftime) where raw data is stored,
-        and generates a filename pattern for the OFF files AND creates all required directories
-        on the path to that filename
-        path : /nsls2/data/sst/legacy/ucal/raw/%Y/%m/%2d (I think this is now /data -- not writing
-        directly to Lustre anymore due to weird problems)
-        """
         today = datetime.datetime.today()
         datedir = today.strftime(path)
         for i in range(1000):
@@ -333,17 +361,14 @@ class TESModel(QObject):
                 filenamePattern,
             )
             self.filename_changed.emit(self._off_filename)
-            self._log_date = os.path.basename(self._off_filename)[:8]
-            self.state = "file_open"
+
         except DastardError as e:
             self._off_filename = None
             raise e
         return self._off_filename
 
     def file_end(self, _try_rsync_data=None, **rsync_kwargs):
-        self.state = "no_file"
         self._dastard.stop_writing()
-        self.filename_changed.emit("")
         if _try_rsync_data is None:
             _try_rsync_data = self.rsync_on_file_end
         if _try_rsync_data:
@@ -370,12 +395,10 @@ class TESModel(QObject):
         if projector_filename is None:
             projector_filename = expanduser(self._config.get("projector_filename"))
         self._dastard.set_projectors(projector_filename)
-        self._write_off = self._config.get("write_off", True)  # Load from config
+        self._write_off = self._config.get("write_off", True)
         self.write_off_changed.emit(self._write_off)
 
     def set_pulse_triggers(self):
-        # ideally record length and the trigger settings would easily vary based on config
-        # so they should live in nsls_server.py
         self._dastard.configure_record_lengths()
         self._dastard.zero_all_triggers()
         self._dastard.set_pulse_trigger_all_chans()
@@ -454,14 +477,12 @@ class TESModel(QObject):
     def scan_point_start(
         self, scan_var: float, _epoch_time_s_for_test=None, extra: dict = None
     ):
-        # self._state.scan_point_start()
         if _epoch_time_s_for_test is None:
             _epoch_time_s_for_test = time.time()
         self._scan.point_start(scan_var, _epoch_time_s_for_test, extra)
         return _epoch_time_s_for_test
 
     def scan_point_end(self, _epoch_time_s_for_test=None):
-        # self._state.scan_point_end()
         if _epoch_time_s_for_test is None:
             _epoch_time_s_for_test = time.time()
         self._scan.point_end(_epoch_time_s_for_test)
@@ -470,7 +491,6 @@ class TESModel(QObject):
     def scan_end(
         self, _try_post_processing=False, _try_rsync_data=None, **rsync_kwargs
     ):
-        # self._state.scan_end()
         if self._scan is not None:
             self._scan.end()
             scan_name = "calibration" if self._scan.calibration else "scan"
@@ -484,7 +504,6 @@ class TESModel(QObject):
             self.state = "file_open"
             if _try_post_processing:
                 pass
-            # self.start_post_processing()
             if _try_rsync_data is None:
                 _try_rsync_data = self.rsync_on_scan_end
             if _try_rsync_data:
@@ -543,7 +562,6 @@ class TESModel(QObject):
         else:
             scan_num = 0
         return scan_num
-        # return 0
 
     def _tes_log_dir(self, make=True):
         dirname = os.path.join(os.path.dirname(self._off_filename), "logs")
