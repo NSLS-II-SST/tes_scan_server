@@ -78,6 +78,29 @@ class DastardError(Exception):
     pass
 
 
+class SignalProperty:
+    def __init__(self, default_value):
+        self.value = default_value
+        self.signal = None
+
+    def __set_name__(self, obj, name):
+        self.name = name
+        self.signal_name = f"{name}_changed"
+
+    def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self
+        return self.value
+
+    def __set__(self, obj, value):
+        if self.value != value:
+            self.value = value
+            signal = getattr(obj, self.signal_name, None)
+
+            if signal is not None:
+                signal.emit(value)
+
+
 class DastardClient(QObject):
     state_changed = pyqtSignal(str)
     writing_changed = pyqtSignal(bool)
@@ -87,13 +110,23 @@ class DastardClient(QObject):
     running_changed = pyqtSignal(bool)
     filename_changed = pyqtSignal(str)
     connected_changed = pyqtSignal(bool)
+    disabled_changed = pyqtSignal(list)
+    projectors_changed = pyqtSignal(bool)
+
+    # SignalProperty attributes
+    writing = SignalProperty(False)
+    channel_names = SignalProperty([])
+    source = SignalProperty("None")
+    running = SignalProperty(False)
+    connected = SignalProperty(False)
+    disabled_chans = SignalProperty([])
+    projectors = SignalProperty(False)
 
     def __init__(self, addr_port, config={}):
         super().__init__()
         self.addr_port = addr_port
         self.config = config
         self._id_iter = itertools.count()
-        self._connected = False
         self._connect()
 
         self.listener_thread = QThread()
@@ -103,14 +136,9 @@ class DastardClient(QObject):
         self.listener.message_received.connect(self.handle_message)
         self.listener_thread.start()
 
-        # Initialize state variables
-        self._source = "None"
-        self._running = False
-        self._channel_names = []
-        self._writing = False
         self._off_filename = ""
 
-        if self._connected:
+        if self.connected:
             self._request_status()  # request one set of all messages on startup
 
     def __del__(self):
@@ -121,28 +149,27 @@ class DastardClient(QObject):
     def handle_message(self, topic, contents):
         if topic == "ALIVE":
             running = contents.get("Running", False)
-            if self._running != running:
-                self._running = running
-                self.running_changed.emit(self._running)
+            if self.running != running:
+                self.running = running
 
         elif topic == "STATUS":
-            if self._running:
+            if self.running:
                 source = contents.get("SourceName", "None")
-                if self._source != source:
-                    self._source = source
-                    self.source_changed.emit(self._source)
+                if self.source != source:
+                    self.source = source
+                projectors = contents.get("ChannelsWithProjectors", [])
+                self.projectors = len(projectors) > 0
             self.status_updated.emit(contents)
 
         elif topic == "CHANNELNAMES":
-            if self._channel_names != contents:
-                self._channel_names = contents
-                self.channel_names_changed.emit(self._channel_names)
+            if self.channel_names != contents:
+                self.channel_names = contents
+                print(contents)
 
         elif topic == "WRITING":
             writing = contents.get("Active", False)
-            if self._writing != writing:
-                self._writing = writing
-                self.writing_changed.emit(self._writing)
+            if self.writing != writing:
+                self.writing = writing
             if writing:
                 filename = contents["FilenamePattern"] % ("chan1", "off")
                 if self._off_filename != filename:
@@ -155,24 +182,30 @@ class DastardClient(QObject):
         elif topic == "STATE":
             self.state_changed.emit(contents)
 
+        elif topic == "TRIGGER":
+            # print(contents)
+            triggerList = [
+                "AutoTrigger",
+                "LevelTrigger",
+                "EdgeTrigger",
+                "EdgeMulti",
+                "EdgeMultiNoise",
+            ]
+            for item in contents:
+                if not any([item.get(trigger, False) for trigger in triggerList]):
+                    if len(item["ChannelIndices"]) < self.get_n_channels():
+                        self.disabled_chans = item["ChannelIndices"]
+                        print(item["ChannelIndices"], "disabled")
+
     def _connect(self):
         try:
             self._socket = socket.create_connection(self.addr_port)
-            self._set_connected(True)
+            self.connected = True
         except socket.error as ex:
             host, port = self.addr_port
             print(f"Could not connect to Dastard at {host}:{port}")
-            self._set_connected(False)
-        return self._connected
-
-    def _set_connected(self, value):
-        if self._connected != value:
-            self._connected = value
-            self.connected_changed.emit(self._connected)
-
-    @property
-    def connected(self):
-        return self._connected
+            self.connected = False
+        return self.connected
 
     def _message(self, method_name, params):
         if not isinstance(params, list):
@@ -181,9 +214,9 @@ class DastardClient(QObject):
         return d
 
     def _call(self, method_name: str, params, verbose=True):
-        if not self._connected:
+        if not self.connected:
             self._connect()
-        if not self._connected:
+        if not self.connected:
             raise DastardError(
                 "Not able to connect to Dastard, check running and try again"
             )
@@ -236,6 +269,8 @@ class DastardClient(QObject):
         if filenamePattern is not None:
             params["FilenamePattern"] = filenamePattern
         response = self._call("SourceControl.WriteControl", params)
+
+        self.listener.update_messages()
         contents = self.listener.get_message_with_topic("WRITING")
         if not contents["Active"]:
             raise DastardError(
@@ -301,12 +336,6 @@ class DastardClient(QObject):
         contents = self.listener.get_message_with_topic("WRITING")
         return contents
 
-    def is_writing(self):
-        return self._writing
-
-    def projectors_are_loaded(self):
-        contents = self.listener.get_message_with_topic("STATUS")
-
     def configure_record_lengths(self, npre=None, nsamp=None):
         params = self.config.get("pulseLengths", {})
         if nsamp is not None:
@@ -353,19 +382,19 @@ class DastardClient(QObject):
         print(result)
 
     def get_source_status(self):
-        return self._source, self._writing
+        return self.source, self.writing
 
     def get_n_channels(self):
         return len(self.get_name_to_number_index())
 
-    def get_channel_names(self):
-        return self._channel_names
+    def get_channel_indices(self):
+        return list(self.get_name_to_number_index().values())
 
     # dastard channelNames go from chan1 to chanN and err1 to errN
     # we need to map from channelName to channelIndex (0-2N-1)
     def get_name_to_number_index(self):
         nameNumberToIndex = {}
-        for i, name in enumerate(self._channel_names):
+        for i, name in enumerate(self.channel_names):
             if not name.startswith("chan"):
                 continue
             nameNumber = int(name[4:])
@@ -377,71 +406,31 @@ class DastardClient(QObject):
         return nameNumberToIndex
 
     def set_pulse_trigger_all_chans(self, threshold=None, n_monotone=None):
-        name_number_index = self.get_name_to_number_index()
-
-        config = {"ChannelIndices": list(name_number_index.values())}
+        config = {"ChannelIndices": self.get_channel_indices()}
         config.update(self.config.get("pulseTrigger", {}))
         if threshold is not None:
-            config["EdgeMulteLevel"] = threshold
+            config["EdgeMultiLevel"] = threshold
         if n_monotone is not None:
             config["EdgeMultiVerifyNMonotone"] = n_monotone
-        """
-            # 'AutoTrigger': False,
-            # 'AutoDelay': 0,
-            # 'LevelTrigger': False,
-            # 'LevelRising': False,
-            # 'LevelLevel': 0,
-            # 'EdgeTrigger': False,
-            # 'EdgeRising': False,
-            # 'EdgeFalling': False,
-            # 'EdgeLevel': 0,
-            "EdgeMulti": True,
-            # 'EdgeMultiNoise': False,
-            # 'EdgeMultiMakeShortRecords': False,
-            # 'EdgeMultiMakeContaminatedRecords': False,
-            # 'EdgeMultiDisableZeroThreshold': False,
-            "EdgeMultiLevel": -100,
-            "EdgeMultiVerifyNMonotone": 6,
-        """
         self._call("SourceControl.ConfigureTriggers", config)
+
+        if self.config.get("use_bahama", False):
+            self.configure_bahama_pulses()
 
     def set_noise_trigger_all_chans(self):
-        name_number_index = self.get_name_to_number_index()
-
         config = {
-            "ChannelIndices": list(name_number_index.values()),
+            "ChannelIndices": self.get_channel_indices(),
         }
         config.update(self.config.get("noiseTrigger", {}))
-
-        """
-            "AutoTrigger": True,
-            "AutoDelay": 0,
-            # 'LevelTrigger': False,
-            # 'LevelRising': False,
-            # 'LevelLevel': 0,
-            # 'EdgeTrigger': False,
-            # 'EdgeRising': False,
-            # 'EdgeFalling': False,
-            # 'EdgeLevel': 0,
-            # 'EdgeMulti': True,
-            # 'EdgeMultiNoise': False,
-            # 'EdgeMultiMakeShortRecords': False,
-            # 'EdgeMultiMakeContaminatedRecords': False,
-            # 'EdgeMultiDisableZeroThreshold': False,
-            # 'EdgeMultiLevel': 100,
-            # 'EdgeMultiVerifyNMonotone': 1
-        }
-        """
         self._call("SourceControl.ConfigureTriggers", config)
 
+        if self.config.get("use_bahama", False):
+            self.configure_bahama_noise()
+
     def zero_all_triggers(self):
-        # print("zero_all_triggers")
-        channel_indicies_all = list(range(len(self.get_channel_names())))
-        # print(f"channel_indicies_all={channel_indicies_all}")
         config = {
-            "ChannelIndices": channel_indicies_all,
+            "ChannelIndices": self.get_channel_indices(),
         }
-        # print(f"config={config}")
         self._call("SourceControl.ConfigureTriggers", config)
 
     def start_lancero(self):
@@ -525,6 +514,79 @@ class DastardClient(QObject):
             return self.start_abaco()
         elif source == "simulation":
             return self.start_sim_pulse_source()
+
+    def configure_bahama_pulses(self, amplitudes=None, width=None, noiselevel=None):
+        if amplitudes is None:
+            amplitudes = self.config["bahama"].get("amplitudes", None)
+        if width is None:
+            width = self.config["bahama"].get("width", None)
+        pulses = {}
+        if amplitudes is not None:
+            pulses["Amplitudes"] = amplitudes
+        if width is not None:
+            pulses["Width"] = width
+
+        self.call_bahama("BahamaControl.ConfigurePulses", pulses)
+        self.call_bahama(
+            "BahamaControl.ConfigureBahama", {"Noiselevel": noiselevel, "Pulse": True}
+        )
+        self.call_bahama("BahamaControl.RegenerateData", {})
+
+    def configure_bahama_noise(self, noiselevel=None, pulses=False):
+        if noiselevel is None:
+            noiselevel = self.config["bahama"].get("noiselevel", 0)
+        self.call_bahama(
+            "BahamaControl.ConfigureBahama", {"Noiselevel": noiselevel, "Pulse": False}
+        )
+        self.call_bahama("BahamaControl.RegenerateData", {})
+
+    def call_bahama(self, method_name: str, params, verbose=True):
+        if "bahama" not in self.config:
+            raise ValueError("Bahama configuration not found in config")
+
+        bahama_config = self.config["bahama"]
+        host = bahama_config.get("host")
+        port = bahama_config.get("port")
+
+        if not host or not port:
+            raise ValueError("Bahama host or port not specified in config")
+
+        try:
+            with socket.create_connection((host, port), timeout=5) as sock:
+                msg = self._message(method_name, params)
+                if verbose:
+                    print(f"Bahama Client: sending: {msg}")
+                else:
+                    print(f"Bahama Client: calling {method_name}")
+
+                sock.sendall(json.dumps(msg).encode())
+                response = sock.recv(4096)
+
+                if not response:
+                    raise DastardError("No response from Bahama")
+
+                response = json.loads(response.decode())
+
+                if verbose:
+                    print(f"Bahama Client: response: {response}")
+                else:
+                    print(f"Bahama Client: got response for {method_name}")
+
+                if response.get("id") != msg["id"]:
+                    raise DastardError("Response id does not match message id")
+
+                err = response.get("error")
+                if err is not None:
+                    raise DastardError(f"Bahama responded with error: {err}")
+
+                return response.get("result")
+
+        except socket.error as e:
+            raise DastardError(f"Socket error when communicating with Bahama: {e}")
+        except json.JSONDecodeError as e:
+            raise DastardError(f"Error decoding JSON response from Bahama: {e}")
+        except Exception as e:
+            raise DastardError(f"Unexpected error in Bahama communication: {e}")
 
 
 def getProjectorConfigs(filename, nameNumberToIndex):

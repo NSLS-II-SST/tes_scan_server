@@ -1,7 +1,6 @@
 from .scan_json import DataScan, CalibrationScan
 from PyQt5.QtCore import QObject, pyqtSignal
 import datetime
-
 import subprocess
 import os
 from os.path import join, exists, basename, dirname, expanduser
@@ -13,7 +12,68 @@ from .dastard_client import DastardError
 from shutil import copy
 
 
+"""def signal_property(signal_type, default=None):
+    def decorator(func):
+        name = func.__name__
+        private_name = f"_{name}"
+        signal_name = f"{name}_changed"
+
+        def getter(self):
+            if not hasattr(self, private_name):
+                setattr(self, private_name, default)
+            return getattr(self, private_name)
+
+        def setter(self, value):
+            if not hasattr(self, private_name):
+                setattr(self, private_name, default)
+            if getattr(self, private_name) != value:
+                setattr(self, private_name, value)
+                getattr(self, signal_name).emit(value)
+
+        return property(getter, setter)
+
+    return decorator"""
+
+
+# Commented out SignalProperty code
+
+
+class SignalProperty:
+    def __init__(self, default_value):
+        self.value = default_value
+        self.signal = None
+
+    def __set_name__(self, obj, name):
+        self.name = name
+        self.signal_name = f"{name}_changed"
+
+    def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self
+        return self.value
+
+    def __set__(self, obj, value):
+        if self.value != value:
+            self.value = value
+            signal = getattr(obj, self.signal_name, None)
+
+            if signal is not None:
+                signal.emit(value)
+
+
+"""
+def setup_signals(cls):
+    items = list(cls.__dict__.items())
+    for name, attr in items:
+        if isinstance(attr, SignalProperty):
+            signal = pyqtSignal(object)
+            setattr(cls, f"{name}_changed", signal)
+    return cls
+"""
+
+
 class TESModel(QObject):
+    # Signals that don't follow the SignalProperty pattern
     autotuned = pyqtSignal(str)
     crate_powered_on = pyqtSignal(str)
     crate_powered_off = pyqtSignal(str)
@@ -21,29 +81,54 @@ class TESModel(QObject):
     programs_killed = pyqtSignal(bool)
     source_on = pyqtSignal(bool)
     source_off = pyqtSignal(bool)
+    status_updated = pyqtSignal(dict)
+
+    # Signals that follow the SignalProperty pattern
+    filename_changed = pyqtSignal(str)
+    noise_file_changed = pyqtSignal(str)
+    projector_file_changed = pyqtSignal(str)
+    dastard_connected_changed = pyqtSignal(bool)
     state_changed = pyqtSignal(str)
     autosetup_changed = pyqtSignal(bool)
-    filename_changed = pyqtSignal(str)
-    scan_str_changed = pyqtSignal(str)
-    scan_num_changed = pyqtSignal(int)
     noise_uid_changed = pyqtSignal(str)
     projector_uid_changed = pyqtSignal(str)
+    calibration_uid_changed = pyqtSignal(str)
     rsync_on_file_end_changed = pyqtSignal(bool)
     rsync_on_scan_end_changed = pyqtSignal(bool)
     write_ljh_changed = pyqtSignal(bool)
     write_off_changed = pyqtSignal(bool)
-
-    # New signals to relay from DastardClient
+    scan_str_changed = pyqtSignal(str)
+    scan_num_changed = pyqtSignal(int)
     writing_changed = pyqtSignal(bool)
     channel_names_changed = pyqtSignal(list)
-    status_updated = pyqtSignal(dict)
     source_changed = pyqtSignal(str)
     running_changed = pyqtSignal(bool)
-    dastard_connected_changed = pyqtSignal(bool)
+    projectors_changed = pyqtSignal(bool)
+
+    # SignalProperty attributes
+    filename = SignalProperty("")
+    noise_file = SignalProperty("")
+    projector_file = SignalProperty("")
+    dastard_connected = SignalProperty(False)
+    state = SignalProperty("no_file")
+    autosetup = SignalProperty(False)
+    noise_uid = SignalProperty("")
+    projector_uid = SignalProperty("")
+    calibration_uid = SignalProperty("")
+    rsync_on_file_end = SignalProperty(False)
+    rsync_on_scan_end = SignalProperty(False)
+    write_ljh = SignalProperty(True)
+    write_off = SignalProperty(False)
+    scan_str = SignalProperty("")
+    scan_num = SignalProperty(0)
+    writing = SignalProperty(False)
+    channel_names = SignalProperty([])
+    source = SignalProperty("none")
+    running = SignalProperty(False)
+    projectors = SignalProperty(False)
 
     def __init__(self, dastard, config, adr=None, cringe=None):
         super().__init__()
-
         self._dastard = dastard
         self._config = config
         self._cc = cringe
@@ -52,36 +137,30 @@ class TESModel(QObject):
         if self._adrListener is not None:
             self._start_adr_listener()
 
-        self._state = "no_file"
-        self._autosetup = False
         self._reset()
 
         # Connect DastardClient signals
-        self._dastard.state_changed.connect(self.state_changed)
-        self._dastard.writing_changed.connect(self.writing_changed)
-        self._dastard.channel_names_changed.connect(self.channel_names_changed)
+        self.connect_to_attribute(self._dastard.writing_changed, "writing")
+        self.connect_to_attribute(self._dastard.channel_names_changed, "channel_names")
+        self.connect_to_attribute(self._dastard.source_changed, "source")
+        self.connect_to_attribute(self._dastard.running_changed, "running")
+        self.connect_to_attribute(self._dastard.connected_changed, "dastard_connected")
+        self.connect_to_attribute(self._dastard.projectors_changed, "projectors")
+
         self._dastard.status_updated.connect(self.status_updated)
-        self._dastard.source_changed.connect(self.source_changed)
-        self._dastard.running_changed.connect(self.running_changed)
         self._dastard.filename_changed.connect(self.handle_filename_changed)
-        self._dastard.connected_changed.connect(self.handle_connected_changed)
+
+    def connect_to_attribute(self, signal, attribute_name):
+        signal.connect(lambda x: setattr(self, attribute_name, x))
 
     def handle_filename_changed(self, filename):
-        if self._off_filename != filename:
-            self._off_filename = filename
-            self.filename_changed.emit(filename)
+        if self.filename != filename:
+            self.filename = filename
             if filename != "":
-                self._log_date = os.path.basename(self._off_filename)[:8]
+                self._log_date = os.path.basename(filename)[:8]
                 self.state = "file_open"
             else:
                 self.state = "no_file"
-
-    def handle_connected_changed(self, connected):
-        # Handle connection status changes here
-        print(
-            f"Dastard connection status changed: {'Connected' if connected else 'Disconnected'}"
-        )
-        self.dastard_connected_changed.emit(connected)
 
     def _start_adr_listener(self):
         self._adrListener.event.connect(self.adr_event_handler)
@@ -99,57 +178,28 @@ class TESModel(QObject):
         self._background_process_log_file = bg_log_file
 
     def _reset(self):
-        self._noise_uid = ""
-        self._projector_uid = ""
-        self._rsync_on_file_end = self._config.get("rsync_on_file_end", False)
-        self._rsync_on_scan_end = self._config.get("rsync_on_scan_end", False)
+        self.noise_uid = ""
+        self.projector_uid = ""
+        self.calibration_uid = ""
+        self.noise_file = ""
+        self.projector_file = ""
+        self.rsync_on_file_end = self._config.get("rsync_on_file_end", False)
+        self.rsync_on_scan_end = self._config.get("rsync_on_scan_end", False)
         self._last_scan = None
         self._log_date = datetime.datetime.today().strftime("%Y%m%2d")
         self._scan = None
-        self._cal_number: int = -1
-        self._scan_num = None
-        self._scan_str = ""
+        self._cal_number = -1
+        self.scan_num = self._get_current_scan_num_from_logs()
+        self.scan_str = ""
         self._overwrite = False
-        self._off_filename = None
+        self.filename = ""
         self._last_projector_file = None
-        self._write_ljh = self._config.get("write_ljh", True)
-        self._write_off = False
-
-    @property
-    def state(self):
-        return self._state
-
-    @state.setter
-    def state(self, new_state):
-        if self._state != new_state:
-            self._state = new_state
-            self.state_changed.emit(self._state)
-
-    @property
-    def filename(self):
-        return self._off_filename
-
-    @property
-    def scan_str(self):
-        return self._scan_str
-
-    @scan_str.setter
-    def scan_str(self, value):
-        if self._scan_str != value:
-            self._scan_str = value
-            self.scan_str_changed.emit(self._scan_str)
-
-    @property
-    def scan_num(self):
-        if self._scan_num is None:
-            self._scan_num = self._get_current_scan_num_from_logs()
-        return self._scan_num
-
-    @scan_num.setter
-    def scan_num(self, value):
-        if self._scan_num != value:
-            self._scan_num = value
-            self.scan_num_changed.emit(self._scan_num)
+        self.write_ljh = self._config.get("write_ljh", True)
+        self.write_off = False
+        self.writing = False
+        self.channel_names = []
+        self.source = "none"
+        self.running = self._dastard.running
 
     @property
     def next_scan_num(self):
@@ -161,76 +211,7 @@ class TESModel(QObject):
 
     def _advance_scan_num(self):
         self.scan_num = self.scan_num + 1
-        return self._scan_num
-
-    @property
-    def autosetup(self):
-        return self._autosetup
-
-    @autosetup.setter
-    def autosetup(self, should_autosetup):
-        self.autosetup_changed.emit(should_autosetup)
-        self._autosetup = should_autosetup
-
-    @property
-    def noise_uid(self):
-        return self._noise_uid
-
-    @noise_uid.setter
-    def noise_uid(self, value):
-        if self._noise_uid != value:
-            self._noise_uid = value
-            self.noise_uid_changed.emit(self._noise_uid)
-
-    @property
-    def projector_uid(self):
-        return self._projector_uid
-
-    @projector_uid.setter
-    def projector_uid(self, value):
-        if self._projector_uid != value:
-            self._projector_uid = value
-            self.projector_uid_changed.emit(self._projector_uid)
-
-    @property
-    def rsync_on_file_end(self):
-        return self._rsync_on_file_end
-
-    @rsync_on_file_end.setter
-    def rsync_on_file_end(self, value):
-        if self._rsync_on_file_end != value:
-            self._rsync_on_file_end = value
-            self.rsync_on_file_end_changed.emit(self._rsync_on_file_end)
-
-    @property
-    def rsync_on_scan_end(self):
-        return self._rsync_on_scan_end
-
-    @rsync_on_scan_end.setter
-    def rsync_on_scan_end(self, value):
-        if self._rsync_on_scan_end != value:
-            self._rsync_on_scan_end = value
-            self.rsync_on_scan_end_changed.emit(self._rsync_on_scan_end)
-
-    @property
-    def write_ljh(self):
-        return self._write_ljh
-
-    @write_ljh.setter
-    def write_ljh(self, value):
-        if self._write_ljh != value:
-            self._write_ljh = value
-            self.write_ljh_changed.emit(self._write_ljh)
-
-    @property
-    def write_off(self):
-        return self._write_off
-
-    @write_off.setter
-    def write_off(self, value):
-        if self._write_off != value:
-            self._write_off = value
-            self.write_off_changed.emit(self._write_off)
+        return self.scan_num
 
     def getFilenamePattern(self, path):
         today = datetime.datetime.today()
@@ -354,26 +335,27 @@ class TESModel(QObject):
         else:
             filenamePattern = None
         try:
-            self._off_filename = self._dastard.start_file(
+            self.filename = self._dastard.start_file(
                 write_ljh if write_ljh is not None else self.write_ljh,
                 write_off if write_off is not None else self.write_off,
                 path,
                 filenamePattern,
             )
-            self.filename_changed.emit(self._off_filename)
-
+            self._log_date = os.path.basename(self.filename)[:8]
+            self.state = "file_open"
         except DastardError as e:
-            self._off_filename = None
+            self.filename = ""
             raise e
-        return self._off_filename
+        return self.filename
 
     def file_end(self, _try_rsync_data=None, **rsync_kwargs):
+        self.state = "no_file"
         self._dastard.stop_writing()
         if _try_rsync_data is None:
             _try_rsync_data = self.rsync_on_file_end
         if _try_rsync_data:
             self.rsync_data(**rsync_kwargs)
-        self._reset()
+        # self._reset()
 
     def make_projectors(self, noise_file, pulse_file):
         projector_filename = expanduser(self._config["projector_filename"])
@@ -417,7 +399,7 @@ class TESModel(QObject):
         sample_desc: str,
         extra: dict = {},
     ):
-        if not self._dastard.is_writing():
+        if not self._dastard.writing:
             raise RuntimeError("No file is open!")
         for fname in self._log_filenames("scan", self.scan_num):
             if not self._overwrite:
@@ -456,7 +438,7 @@ class TESModel(QObject):
         """
         # self._state.scan_start()
         # self.set_pulse_triggers()
-        if not self._dastard.is_writing():
+        if not self._dastard.writing:
             raise RuntimeError("No file is open!")
         data_path = self._dastard.get_data_path()
         self._scan = CalibrationScan(
@@ -517,7 +499,7 @@ class TESModel(QObject):
         self, dest="/nsls2/data/sst/legacy/ucal/raw/%Y/%m/%2d", filename=None
     ):
         if filename is None:
-            filename = self._off_filename
+            filename = self.filename
         if filename is None:
             print("No file given, not going to rsync")
             return
@@ -564,7 +546,7 @@ class TESModel(QObject):
         return scan_num
 
     def _tes_log_dir(self, make=True):
-        dirname = os.path.join(os.path.dirname(self._off_filename), "logs")
+        dirname = os.path.join(os.path.dirname(self.filename), "logs")
         if make:
             Path(dirname).mkdir(parents=True, exist_ok=True)
         return dirname
