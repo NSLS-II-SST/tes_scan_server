@@ -140,6 +140,9 @@ class DastardClient(QObject):
 
         if self.connected:
             self._request_status()  # request one set of all messages on startup
+        self.status_timer = QTimer(self)
+        self.status_timer.timeout.connect(self._request_status)
+        self.status_timer.start(30000)  # 30000 milliseconds = 30 seconds
 
     def __del__(self):
         self.listener.stop()
@@ -147,6 +150,9 @@ class DastardClient(QObject):
         self.listener_thread.wait()
 
     def handle_message(self, topic, contents):
+        if topic not in ["ALIVE", "EXTERNALTRIGGER", "TRIGGERRATE"]:
+            print("From Dastard: ", topic, contents)
+
         if topic == "ALIVE":
             running = contents.get("Running", False)
             if self.running != running:
@@ -223,7 +229,26 @@ class DastardClient(QObject):
 
         msg = self._message(method_name, params)
         if verbose:
-            print(f"Dastard Client: sending: {msg}")
+            if method_name == "SourceControl.ConfigureProjectorsBasis":
+                # Params are waaaaay too long
+                trunc_params = {"ChannelIndex": params["ChannelIndex"]}
+                trunc_params["ProjectorsBase64"] = (
+                    params["ProjectorsBase64"][:10]
+                    + "..."
+                    + params["ProjectorsBase64"][-10:]
+                )
+                trunc_params["BasisBase64"] = (
+                    params["BasisBase64"][:10] + "..." + params["BasisBase64"][-10:]
+                )
+                trunc_msg = {
+                    "id": msg["id"],
+                    "method": msg["method"],
+                    "params": [trunc_params],
+                }
+                trunc_str = json.dumps(trunc_msg)
+                print(f"Dastard Client: sending {trunc_str}")
+            else:
+                print(f"Dastard Client: sending: {msg}")
         else:
             print(f"Dastard Client: calling {method_name}")
         self._socket.sendall(json.dumps(msg).encode())
@@ -252,9 +277,7 @@ class DastardClient(QObject):
         return response["result"]
 
     def _request_status(self):
-        time.sleep(0.5)  # make sure our zmq side it hooked up?
         self._call("SourceControl.SendAllStatus", "dummy")
-        time.sleep(0.5)  # wait to get all the statuses back
 
     def start_file(self, ljh22=None, off=None, path=None, filenamePattern=None):
         params = {"Request": "Start", "WriteLJH3": False}
@@ -380,6 +403,7 @@ class DastardClient(QObject):
         )
         print("set_projectors result")
         print(result)
+        self._request_status()
 
     def get_source_status(self):
         return self.source, self.writing

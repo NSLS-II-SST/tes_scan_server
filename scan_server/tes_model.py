@@ -359,13 +359,10 @@ class TESModel(QObject):
 
     def make_projectors(self, noise_file, pulse_file):
         projector_filename = expanduser(self._config["projector_filename"])
-        args = [
-            "make_projectors",
-            "-rio",
-            projector_filename,
-            pulse_file,
-            noise_file,
-        ]
+        args = []
+        args += self._config.get("projector_cmd", ["make_projectors", "-ro"])
+        args += [projector_filename, pulse_file, noise_file]
+
         pulse_folder = os.path.dirname(pulse_file)
         print(args)
         subprocess.run(
@@ -503,6 +500,13 @@ class TESModel(QObject):
         if filename is None:
             print("No file given, not going to rsync")
             return
+
+        if dest is None:
+            dest = self._config.get("rsync_dest", None)
+        if dest is None:
+            print("Received no destination, not rsyncing anywhere")
+            return
+
         from_dir = dirname(filename)
         date = datetime.datetime.strptime(basename(dirname(from_dir)), "%Y%m%d")
         to_dir = datetime.datetime.strftime(date, dest)
