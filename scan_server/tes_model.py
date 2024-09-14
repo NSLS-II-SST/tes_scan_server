@@ -216,15 +216,18 @@ class TESModel(QObject):
     def getFilenamePattern(self, path):
         today = datetime.datetime.today()
         datedir = today.strftime(path)
-        for i in range(1000):
+        """for i in range(1000):
             sampledir = join(datedir, f"{i:04d}")
             if not exists(sampledir):
-                os.makedirs(sampledir)
+                # os.makedirs(sampledir)
                 filepattern = join(
                     sampledir, today.strftime(f"%Y%m%2d_run{i:04d}_%%s.%%s")
                 )
                 return filepattern
-        raise ValueError("Could not find a suitable directory name")
+        """
+        #raise ValueError("Could not find a suitable directory name")
+        return datedir
+    
 
     def adr_event_handler(self, event):
         print(event)
@@ -284,7 +287,9 @@ class TESModel(QObject):
             print("killing programs first")
             self.kill_programs()
             time.sleep(2)
-        subprocess.Popen(["open_tes_programs.sh"] + programs)
+        args = ["open_tes_programs.sh"] + programs
+        print("Running ", args)
+        subprocess.Popen(args)
         time.sleep(5)
         success = self.check_programs_running()
         self.programs_started.emit(success)
@@ -365,10 +370,15 @@ class TESModel(QObject):
 
         pulse_folder = os.path.dirname(pulse_file)
         print(args)
-        subprocess.run(
+        proc_return = subprocess.run(
             args, stdout=self._background_process_log_file, stderr=subprocess.STDOUT
         )
-        copy(projector_filename, pulse_folder)
+        if proc_return.returncode == 0:
+            return True
+        else:
+            return False
+
+        #copy(projector_filename, pulse_folder)
 
     def set_projectors(self, projector_filename=None):
         if projector_filename is None:
@@ -563,8 +573,9 @@ class TESModel(QObject):
         # user log is supposed to provide one stop shop to get an overview of all the data taken
         filename1 = os.path.join(self._user_log_dir(), f"{log_name}{log_num:04d}.json")
         # tes_log_dir lives right inside the ljh/off folder
-        filename2 = os.path.join(self._tes_log_dir(), f"{log_name}{log_num:04d}.json")
+        #filename2 = os.path.join(self._tes_log_dir(), f"{log_name}{log_num:04d}.json")
+        lognames = [filename1]
         if not self._overwrite:
-            assert not os.path.isfile(filename1), f"{filename1} already exists"
-            assert not os.path.isfile(filename2), f"{filename2} already exists"
-        return [filename1, filename2]
+            for filename in lognames:
+                assert not os.path.isfile(filename), f"{filename} already exists"
+        return lognames

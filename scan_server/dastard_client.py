@@ -150,8 +150,8 @@ class DastardClient(QObject):
         self.listener_thread.wait()
 
     def handle_message(self, topic, contents):
-        if topic not in ["ALIVE", "EXTERNALTRIGGER", "TRIGGERRATE"]:
-            print("From Dastard: ", topic, contents)
+        #if topic not in ["ALIVE", "EXTERNALTRIGGER", "TRIGGERRATE"]:
+        #    print("From Dastard: ", topic, contents)
 
         if topic == "ALIVE":
             running = contents.get("Running", False)
@@ -257,10 +257,12 @@ class DastardClient(QObject):
         if response == b"":
             print("Got b'', try reconnecting to Dastard")
             self._socket.close()
-            self._connect()
-            self._socket.sendall(json.dumps(msg).encode())
-            response = self._socket.recv(4096)
-
+            if self._connect():
+                self._socket.sendall(json.dumps(msg).encode())
+                response = self._socket.recv(4096)
+            else:
+                response = b""
+                
         if response == b"":
             raise DastardError("no communication from Dastard")
 
@@ -277,7 +279,13 @@ class DastardClient(QObject):
         return response["result"]
 
     def _request_status(self):
-        self._call("SourceControl.SendAllStatus", "dummy")
+        if self.connected:
+            try:
+                self._call("SourceControl.SendAllStatus", "dummy")
+            except DastardError:
+                print("Could not receive status from Dastard")
+        else:
+            print("Not connected to Dastard")    
 
     def start_file(self, ljh22=None, off=None, path=None, filenamePattern=None):
         params = {"Request": "Start", "WriteLJH3": False}

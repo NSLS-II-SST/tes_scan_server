@@ -15,7 +15,11 @@ import json
 from functools import partial
 from .nsls_server import create_tes
 from .rpc_server import RPCDispatch, get_dispatch_from
-
+from .epics_server import EpicsServer
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 class ScannerComm:
     def __init__(self, address, port):
@@ -47,8 +51,16 @@ class ScannerComm:
 
 
 class AutoTES(QMainWindow):
-    def __init__(self, tes):
+    def __init__(self, config_file):
         super().__init__()
+
+        with open(config_file, "rb") as f:
+            config = tomllib.load(f)
+
+        epics_config = config.pop("epics", {})
+
+        tes = create_tes(config)
+        
         self.tes = tes
         self.tesThread = QThread()
         self.tes.moveToThread(self.tesThread)
@@ -102,6 +114,13 @@ class AutoTES(QMainWindow):
         self.rpc.moveToThread(self.thread)
         self.thread.started.connect(self.rpc.start)
         self.thread.start()
+
+        self.epics_thread = QThread()
+        self.epics_server = EpicsServer(self.tes, **epics_config)
+        self.epics_server.moveToThread(self.epics_thread)
+        self.epics_thread.started.connect(self.epics_server.start)
+        self.epics_thread.start()
+
 
         mainLayout = QHBoxLayout()
         setupLayout = QVBoxLayout()
@@ -267,9 +286,8 @@ def main():
     args = parser.parse_args()
 
     app = QApplication([])
-    tes = create_tes(args.config_file)
 
-    mainWindow = AutoTES(tes)
+    mainWindow = AutoTES(args.config_file)
     mainWindow.show()
     sys.exit(app.exec())
 

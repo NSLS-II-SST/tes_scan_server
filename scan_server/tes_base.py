@@ -119,7 +119,7 @@ class TESModel(QObject):
         for i in range(1000):
             sampledir = join(datedir, f"{i:04d}")
             if not exists(sampledir):
-                os.makedirs(sampledir)
+                # os.makedirs(sampledir)
                 filepattern = join(sampledir, today.strftime(f"%Y%m%2d_run{i:04d}_%%s.%%s"))
                 return filepattern
         raise ValueError("Could not find a suitable directory name")

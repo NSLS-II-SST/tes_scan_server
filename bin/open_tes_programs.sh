@@ -25,7 +25,7 @@ for program in "${programs_to_open[@]}"; do
             start_program_if_not_running "cringe" "cringe -F /home/xf07id1/cringe_config/20220323_8col_30row_nsls_50mK.pkl"
             ;;
         dastard)
-            start_program_if_not_running "dastard" "dastard"
+            start_program_if_not_running "dastard" "systemctl start dastard"
             ;;
         dcom)
             start_program_if_not_running "dcom" "dcom"
