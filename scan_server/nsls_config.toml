@@ -1,0 +1,63 @@
+[dastard]
+default_source = "lancero"
+available_sources = ["lancero", "simulation"]
+host = "localhost"
+port = 5500
+
+[dastard.pulseTrigger]
+EdgeMulti = true
+EdgeMultiLevel = -150
+EdgeMultiVerifyNMonotone = 6
+
+[dastard.noiseTrigger]
+AutoTrigger = true
+AutoDelay = 0
+
+[dastard.pulseLengths]
+Nsamp = 2000
+Npre = 1000
+
+[dastard.writeControl]
+WriteLJH22 = false
+WriteOFF = true
+
+[dastard.lancero]
+ActiveCards = [0]
+ChanSepColumns = 0
+ChanSepCards = 0
+FirstRow = 1
+CardDelay = [1]
+ClockMHz = 125
+Nsamp = 4
+
+[dastard.abaco]
+HostPortUDP = ["10.0.15.100:4001"]
+Unwrap = true
+ResetAfter = 2000
+PulseSign = 1
+Bias = true
+RescaleRaw = true
+InvertChan = []
+
+[dastard.simulation]
+Nchan = 4
+SampleRate = 2000
+Pedestal = 200
+Amplitudes = [2000, 4000]
+Nsamp = 1024
+
+[tes]
+base_user_output_dir = "~/userout"
+server_log_dir = "~/.scan_server"
+projector_filename = "/nexafs/shared/projectors.hdf5"
+# projector_cmd = ["make_projectors", "-ro"]
+projector_cmd = ["/home/xf07id1/scan_server/bin/make_projector_service.sh"]
+programs_to_run = ["dcom", "dastard", "cringe", "adr_gui"]
+adr = true
+cringe = true
+beamtime_id = 1
+rsync_on_file_end = false
+rsync_on_scan_end = false
+
+[epics]
+prefix="XF:07ID-ES{UCAL}:"
