@@ -461,7 +461,7 @@ class DastardClient(QObject):
 
     def zero_all_triggers(self):
         config = {
-            "ChannelIndices": self.get_channel_indices(),
+            "ChannelIndices": list(range(len(self.channel_names))),
         }
         self._call("SourceControl.ConfigureTriggers", config)
 

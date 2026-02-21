@@ -16,6 +16,8 @@ from functools import partial
 from .nsls_server import create_tes
 from .rpc_server import RPCDispatch, get_dispatch_from
 from .epics_server import EpicsServer
+from time import sleep
+
 try:
     import tomllib
 except ModuleNotFoundError:
@@ -206,19 +208,29 @@ class AutoTES(QMainWindow):
         self.rpc.call_method("autosetup", args=[should_autosetup])
 
     def setupTES(self):
+        print("Starting programs")
         success, err = self.rpc.call_method("start_programs", kwargs={"restart": True})
+        print(f"Success: {success}")
         if not success:
             return
         if self.hasCringe:
+            sleep(5)
+            print("Powering on TES")
             success, err = self.rpc.call_method("power_on_tes")
+            print(f"Success: {success}")
             if not success:
                 return
+            sleep(5)
+        print("Starting Dastard Source")
         success, err = self.rpc.call_method("start_source", kwargs={"restart": True})
+        print(f"Success: {success}")
         if not success:
             return
         if self.hasCringe:
+            print("Starting Autotune")
             success, err = self.rpc.call_method("autotune")
-
+            print(f"Success: {success}")
+            
     def startPrograms(self):
         print("Start programs")
         self.progButton.setStyleSheet("background-color : grey")

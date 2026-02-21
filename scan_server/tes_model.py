@@ -153,6 +153,13 @@ class TESModel(QObject):
     def connect_to_attribute(self, signal, attribute_name):
         signal.connect(lambda x: setattr(self, attribute_name, x))
 
+    def rpc_set_attr(self, attr, value):
+        setattr(self, attr, value)
+        return True
+    
+    def rpc_get_attr(self, attr):
+        return getattr(self, attr, None)
+
     def handle_filename_changed(self, filename):
         if self.filename != filename:
             self.filename = filename
@@ -384,8 +391,8 @@ class TESModel(QObject):
         if projector_filename is None:
             projector_filename = expanduser(self._config.get("projector_filename"))
         self._dastard.set_projectors(projector_filename)
-        self._write_off = self._config.get("write_off", True)
-        self.write_off_changed.emit(self._write_off)
+        self.write_off = self._config.get("write_off", True)
+        self.write_off_changed.emit(self.write_off)
 
     def set_pulse_triggers(self):
         self._dastard.configure_record_lengths()
@@ -468,14 +475,20 @@ class TESModel(QObject):
     ):
         if _epoch_time_s_for_test is None:
             _epoch_time_s_for_test = time.time()
-        self._scan.point_start(scan_var, _epoch_time_s_for_test, extra)
-        return _epoch_time_s_for_test
+        if self._scan is not None:
+            self._scan.point_start(scan_var, _epoch_time_s_for_test, extra)
+            return _epoch_time_s_for_test
+        else:
+            return "No scan is open"
 
     def scan_point_end(self, _epoch_time_s_for_test=None):
         if _epoch_time_s_for_test is None:
             _epoch_time_s_for_test = time.time()
-        self._scan.point_end(_epoch_time_s_for_test)
-        return _epoch_time_s_for_test
+        if self._scan is not None:
+            self._scan.point_end(_epoch_time_s_for_test)
+            return _epoch_time_s_for_test
+        else:
+            return "No scan is open"
 
     def scan_end(
         self, _try_post_processing=False, _try_rsync_data=None, **rsync_kwargs

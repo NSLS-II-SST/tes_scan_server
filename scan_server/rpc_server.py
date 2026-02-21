@@ -106,36 +106,39 @@ class RPCDispatch(QObject):
         serversocket.listen(1)
         # if log_file is not None:
         #     log_file.write(f"{dispatch}\n")
-        try:
-            while True:
-                # accept connections from outside
-                (clientsocket, address) = serversocket.accept()
-                """
+        
+        while True:
+            # accept connections from outside
+            (clientsocket, address) = serversocket.accept()
+            """
                 # Horrible software firewall
                 print(f"connection from {address}")
                 if address[0] not in ['10.66.48.205', '127.0.0.1']:
                     print("unapproved address")
                     clientsocket.close()
                     continue
-                """
-                while True:
+            """
+            while True:
+                try:
                     data = get_message(clientsocket)
                     if data is None:
                         print(f"data was none, breaking to wait for connection")
                         break
                     self.handle_one_message(clientsocket, data, True, [])
-                    """
-                    if log_file is not None:
-                    t_human, data, response = a
-                    log_file.write(f"{t_human}")
-                    log_file.write(f"{data}\n")
-                    log_file.write(f"{response}\n")
-                    """
-        except KeyboardInterrupt:
-            print("\nCtrl-C detected, shutting down")
-            if self.log_file is not None:
-                self.log_file.write(f"Ctrl-C at {time_human()}\n")
-            return
+                except:
+                    pass
+            """
+            if log_file is not None:
+            t_human, data, response = a
+            log_file.write(f"{t_human}")
+            log_file.write(f"{data}\n")
+            log_file.write(f"{response}\n")
+            """
+            # except KeyboardInterrupt:
+            #print("\nCtrl-C detected, shutting down")
+            #if self.log_file is not None:
+            #    self.log_file.write(f"Ctrl-C at {time_human()}\n")
+            #return
 
     def call_method(self, method_name, args=[], kwargs={}, no_traceback_error_types=[]):
         if method_name not in self.dispatch.keys():
